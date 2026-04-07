@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/runkids/skillshare/main/schemas/registry.schema.json
+skills:
+  - name: _SafeKeepIt-dot.ai
+    source: https://github.com/SafeKeepIt/dot.ai.git
+    tracked: true
+    branch: main
