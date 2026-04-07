@@ -1,18 +1,21 @@
-## Submodule Sync Rules
+## Shared Skill Sync Rules
+
+Skills in `.ai/skills/` are shared across projects via Skillshare.
 
 ### Before starting any task:
 
-Run:
-git submodule update --remote --merge
+Pull the latest shared skills:
 
-### After finishing a task (only if there are changes):
+```bash
+.ai/skills/skillshare-sync/bin/ss pull
+```
 
-Step 1 — push changes inside the submodule:
-cd .ai
-git diff --quiet && git diff --cached --quiet || (git add -A && git commit -m "sync" && git push)
+### After editing a skill file:
 
-Step 2 — update the submodule pointer in the parent repo:
-cd ..
-git diff --quiet && git diff --cached --quiet || (git add .ai && git commit -m "update submodule ref" && git push)
+Share changes with all other projects and push to GitHub:
 
-Never commit or push if there are no changes.
+```bash
+.ai/skills/skillshare-sync/bin/ss share <project-name>
+```
+
+Where `<project-name>` is the current project directory name (e.g., `diamond`, `home`, `namioto`).
