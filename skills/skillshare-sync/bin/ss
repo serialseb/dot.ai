@@ -11,7 +11,7 @@ sync_agents() {
   fi
   echo "Syncing AGENTS.shared.md..."
   # Read target paths from config
-  grep 'path:.*/.ai/skills' "$CONFIG" | sed 's|.*path: *||;s|/.ai/skills.*||' | while read -r proj_dir; do
+  grep 'path:.*skills' "$CONFIG" | sed 's|.*path: *||;s|/\.claude/skills.*||;s|/\.ai/skills.*||' | while read -r proj_dir; do
     if [ -d "$proj_dir" ]; then
       cp "$agents_src" "$proj_dir/AGENTS.shared.md"
     fi
