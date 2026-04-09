@@ -4,3 +4,7 @@ skills:
     source: https://github.com/SafeKeepIt/dot.ai.git
     tracked: true
     branch: main
+  - name: git-commit
+    source: https://github.com/SafeKeepIt/dot.ai/skills/git-commit
+  - name: workflow
+    source: https://github.com/SafeKeepIt/dot.ai/skills/workflow

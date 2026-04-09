@@ -1,0 +1,5 @@
+interface:
+  display_name: "Dotnet Coding"
+  short_description: "C# and .NET implementation rules"
+policy:
+  allow_implicit_invocation: true
