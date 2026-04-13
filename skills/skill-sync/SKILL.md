@@ -5,8 +5,9 @@ share: github
 ---
 
 # Skill Sync
+Sills are shared across projects and must stsy consistent.
 
-## Start
+## Before strting work
 
 Run:
 
@@ -14,13 +15,22 @@ Run:
 skillshare pull
 ```
 
-## Finish
+## When work is complete
 
-If the edited skill frontmatter metdata has `share: github`, for each modified skill, run:
+If any skill with `share: github` in its frontmatter was modified:
 
 ```bash
-skillshare collect <skill-name> -g
-skillshare push -m "<message>"
+cd .skillshare/skills/_origin
+git status
+git add .
+git commit -m "<message>" || echo "No changes to commit"
+git push origin main
 ```
 
-`<message>` must follow the same rules as git commit messages.
+`<message>` must follow standard git commit rules.
+
+## Rules
+
+- DO NOT use other `skillshare`
+- Always run `git status` before committing
+- If there are no changes, continue without failing
