@@ -1,58 +1,88 @@
 ---
 name: workflow
-description: Use this when starting or stoppping work on code, You MUST NOT begin coding without executing this tool.
+description: MUST be read before starting any task, plan, or coding work, and again when finishing. Defines branch rules, commit format, merge procedure, and cleanup steps. No work begins or ends without following this.
+
 metadata:
-  tags: [git, push, merge, plan, task, workflow, finish, complete, end]
+  tags: [git, workflow, start, begin, task, plan, branch, finish, complete, end, merge, squash, cleanup]
+  share: github
 ---
 
-# Rules
+# Intent (Workflow)
 
-- work is always within a workflow
-- work MUST NOT start until all conditions in workflow strat section has been exectted
+Any task, plan, workstream or otherwise set of tasks a coding agent executes sequentially for user is called a workflow and must folow those instructions.
 
-# Workflow
+## Checklist
 
-Any task, plan, workstream or otherwise set of tasks a coding agent executes sequentially for user is called a workflow.
+The whole workflow must be followed, you must complete all these steps.
 
-# Checklist
-
-Start:
- - [ ] Feature branch created
- - [ ] Working tree clean
+Workflow Start:
+ - [ ] Feature branch created with initial commit
+ - [ ] Working tree cleaned
  - [ ] Git commit format understood
 
-End:
- - [ ] Merge squash
- - [ ] Marker tag
+Workflow End:
+ - [ ] Created marker tag
+ - [ ] Merged squash
+ - [ ] Verified Integrity
  - [ ] Feature branch deleted
 
-## Workflow start
+## Rules
+
+- Any work MUST folow these rules unless user override
+- work MUST NOT start until all conditions in workflow start has been executed
+
+# Workflow start
+
+A workflow is called differently in different agents: plans, tasks, workstreams or others. They are all synonyms.
 
 Before any work is started, by the user or the agent, a workflow has started.
+
 - work never starts on a dirty tree. Ask the user for confirmation to sash dirty files or do a WIP git commit
 - all work MUST be done on a feature branch `f/<feature-id>`
 - a feature branch MUST ONLY branch from the `main` branch, never from a feature brnch.
 
-A workflow is called differently in different agents: plans, tasks, workstreams or others. They reore
 
 - Merge commits are forbidden.
 - All work MUST be done on feature branches unless specifically allowed by the user with branch-name being (`f/<feature-id>`)
 
-## Workflow end
+## Initial commit on feature branch 
+
+Once a feature branch has been created, create a first empty commit, describing the aim of the future branch, and a trailer called `Base` with the SHA of the commit from wich the branch was created.
+
+# Workflow end
 
 Ending the workflow must follow the following steps in this order.
 
-### ⛔ User approval gate
+## Clean tree
+
+Agents leave files behind tracking their work.
+
+If files are included by .gitignore as preserve `!<path>` or ignore `<path>`, they are to be commited, otherwise alert the user and propose adding the directory or the file  to `.gitignore`, with a recommendation.
+Examples:
+- OpenCode plan files (`.opencode/plans/`, `plan.md`, or similar)
+- Agent task files, scratchpads, or temporary reasoning files created by the tool
+- Any file the tool created to track its own progress, not for the project
+- Propose to the user to add any such file to the `.gitignore` file
+- Do not delete files without user confirmation
+
+Task files always get commited:
+- `HANDOVER.md` — cross-session context for the next agent
+- `TODO.md` — project-level work tracking yet to do. Move completed tasks to `DONE.md`
+- `DONE.md` — project-level work done.
+- `AGENTS.shared.md` — shared rules for all agents on this project
+- Memory files under `.claude/projects/`
+
+## ⛔ User approval gate
 
 STOP. Before doing anything else, you MUST ask the user for explicit approval to merge and push.
-Present a summary of what will be merged (branch name, commit count, HEAD sha) and wait for confirmation.
-Do NOT proceed with any of the steps below until the user says yes.
+Present a summary of the commits (branch name, commit count, HEAD sha) and wait for confirmation.
+Do NOT proceed with any of the steps below until user confirmation.
 
-### Marker tag
+## Marker tag
 
 You must add a tag named `archive/<feature-id>` to the feature branch you're merging.
 
-### Merge squash
+## Merge squash
 
 Before merging, record the commit count of the feature branch:
 
@@ -93,11 +123,11 @@ When pushing, always include notes so CI can read the count for versioning:
 git push origin main refs/notes/commits
 ```
 
-### Verify squash integrity
+## Verify squash integrity
 
 After the squash commit, verify that no content was lost and the metadata is correct:
 
-```
+```bash
 # Tree content must match
 SQUASH_TREE=$(git rev-parse HEAD^{tree})
 BRANCH_TREE=$(git rev-parse archive/<feature-id>^{tree})
@@ -111,10 +141,6 @@ ACTUAL_COUNT=$(git rev-list $(git merge-base main~ archive/<feature-id>)..archiv
 
 If either check fails, do NOT delete the branch. Investigate and fix the squash commit first.
 
-### Delete branch
+## Delete branch
 
 Delete the feature branch. Use `git branch -D` (force) because squash merges do not preserve ancestry — git's `-d` safety check will always report "not fully merged" even when the content is identical. The archive tag and the integrity check above are the safety net.
-
-### Complete agent task
-
-If you keep files to track tasks, workflows, plans or otherwise, and they are no longer needed, delete them.
