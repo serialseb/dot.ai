@@ -1,7 +1,8 @@
 ---
 name: skill-sync
 description: MUST be read before starting any task, plan, or coding work, and again when finishing, for skills with `share: github`. Pull before starting. If a shared skill was edited, collect it and push it when finishing. This should trigger alongside workflow.
-share: github
+metadata:
+  share: github
 ---
 
 # Skill Sync
@@ -9,15 +10,20 @@ Sills are shared across projects and must stsy consistent.
 
 ## Before strting work
 
-Run:
+
+### Update skills
 
 ```bash
-skillshare pull
+skillshare update --all --project
+skillshare sync --all --project
+
 ```
 
 ## When work is complete
 
-If any skill with `share: github` in its frontmatter was modified:
+If any skill with `share: github` in its frontmatter was modified, it must be written back to its repository.
+
+### Git Push
 
 ```bash
 cd .skillshare/skills/_origin
@@ -26,8 +32,11 @@ git add .
 git commit -m "<message>" || echo "No changes to commit"
 git push origin main
 ```
-
 `<message>` must follow standard git commit rules.
+
+### Refresh
+
+Re-apply the Update Skills section.
 
 ## Rules
 
