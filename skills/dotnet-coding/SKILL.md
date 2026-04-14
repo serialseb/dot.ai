@@ -1,6 +1,6 @@
 ---
 name: dotnet-coding
-description: Use for any .NET or C# code change: implement, edit, modify, refactor, fix, add, remove, rename, or update code, tests, or project files. Trigger for coding work in .NET repositories without requiring the user to name the skill.
+description: "Use for any .NET or C# code change: implement, edit, modify, refactor, fix, add, remove, rename, or update code, tests, or project files. Trigger for coding work in .NET repositories without requiring the user to name the skill."
 metadata:
   tags: [dotnet, csharp, coding, code-edit, implementation, refactor, fix, tests]
   source: github
