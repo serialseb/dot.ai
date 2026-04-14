@@ -15,8 +15,8 @@ Sills are shared across projects and must stsy consistent.
 
 ```bash
 skillshare update --all --project
+skillshare init --project --discover
 skillshare sync --all --project
-
 ```
 
 ## When work is complete
