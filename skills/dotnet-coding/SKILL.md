@@ -14,6 +14,7 @@ Use this skill for implementation work in `.NET` repositories, especially when c
 
 - Target `.NET 10` and `C# 14` or newer
 - Always use the latest language and framework features
+- Keep Native AOT compatibility in mind by default
 - Follow `SOLID`, `KISS`, composition over inheritance
 - Prefer composable components when they can share the same interface
 - Prefer functional style where it fits naturally
@@ -35,6 +36,12 @@ Use this skill for implementation work in `.NET` repositories, especially when c
 - Reuse existing patterns before introducing new ones
 - Keep public APIs and behavior stable unless the task requires a change
 - In test projects, follow the test project's existing conventions
+- Understand the full API surface before choosing a .NET API; do not
+  shoehorn one overload or one method in isolation
+- Prefer the latest official .NET APIs and language constructs that fit the
+  target framework instead of legacy-compatible patterns
+- Avoid type- and assembly-based runtime patterns in AOT-sensitive paths
+  unless the documented API specifically requires them
 
 ## Stop
 
