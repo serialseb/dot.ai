@@ -1,47 +1,109 @@
 # Shared agent instructions
 
-This file is shared instructions for all agents and all projects. It must not be updated without specific permission from the user. It must not be deleted, moved, or renamed under any circumstances. 
+This file contains shared instructions for all agents and all projects.
+
+It MUST NOT be:
+- modified
+- deleted
+- moved
+- renamed
+
+unless explicitly requested by the user.
+
+---
 
 ## Core principles
 
-- Any rule can be overruled by the user.
-- The architecture, demands or designs of the user are mandatory. The agent can propose changes but MUST NOT make changes without permission by the user.
+- Any rule can be overruled by the user
+- The user's architecture, requirements, and designs are mandatory
+- The agent MAY propose changes but MUST NOT apply them without user approval
 
-## Repsitory structure and files
+---
 
-A repository must be grouping all files by the technology they use. Source files must go in a `src` sub-directory and tests, when they exist, in `tests`. Those files belong to. For example:
- - /
-   - pyhon/
-     - src/
-     - tests/
-   - opentofu/
-     - src/
+## Mandatory files
+
+### README.md
+
+Describes the repository for humans.
+
+Rules:
+- Uses sections starting with `# <header>`
+- Only update sections impacted by your changes. In the case of a mono repo, only update the part of the file related to your changes' area.
+
+Must include:
+- WHAT the repository does (intent, not implementation), max 5 lines
+- Installation instructions
+- Usage example (end-to-end, concise; may include comments)
+
+---
+
+### ARCHITECTURE.md
+
+- High-level system structure
+- How components fit together
+- WHY key decisions were made
+
+---
+
+### ROADMAP.md
+
+- Future plans only
+
+Each entry MUST include:
+- WHAT
+- WHY
+- Date added
+
+Informational only (not an execution plan)
+
+---
+
+### AGENTS.shared.md
+
+- Shared instructions across all projects
+- MUST NOT be modified unless explicitly requested
+
+---
+
+## Repository structure
+
+- Group files by technology
+- Source code MUST be in `src/`
+- Tests MUST be in `tests/` when applicable
+
+Example:
+
+/
+  python/
+    src/
+    tests/
+  opentofu/
+    src/
+
+---
 
 ## Software principles
-
-Follow those architectural principles when writing or refactring code.
 
 - SOLID
 - KISS
 - Composition over inheritance
-- Never write code "just in case" or "if we extend it later, write only enough code to fulfill the feature
-- Self-descriptive code over writing comments, do not write redundant suffixes (e.g. DTO, Service, Component, State)
+- Do NOT write speculative code
+- Implement only what is required for the current feature
+- Prefer self-descriptive code over comments
+- Avoid redundant naming (e.g. DTO, Service, Component, State)
+
+---
 
 ## Editing rules
 
-Follow tose rules when editing any code.
-
-- Keep changes local unless broader change is absolutely required
-- Do not change architecture without confirmation by the user
+- Keep changes local unless broader changes are required
+- Do NOT change architecture without user approval
 - Reuse existing patterns before introducing new ones
 
-## Diagnstic rules
+---
 
-When diagnosing an issue, follow those rules (MUST):
-- Do not ask the user to copy and paste chunks of code and return a copy and paste of the result. Write self-continaed scripts and allow the user to copy the code and prepare your script with `pbpaste` if you need to recover outputs.
-- Do not investigate the same code or the same issue more than 3 times. If still fail, stop, re-evalueate and restart a new implementation. The user's time is valuable.
+## Stop condition
 
-
-## Stop
-
-Stop when the requested change is complete and verified enough for the current task.
+Stop when:
+- the requested change is complete
+- the result is sufficiently verified for the task

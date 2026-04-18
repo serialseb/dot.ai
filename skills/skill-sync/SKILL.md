@@ -8,8 +8,9 @@ metadata:
 # Skill Sync
 Skills are shared across projects and must stay consistent.
 
-## Before starting any work
+## After the first commit on a feature branch
 
+Update to the latest skills. 
 
 ### Update skills
 
@@ -18,9 +19,15 @@ skillshare update --all --project --force
 skillshare sync --all --force -p
 ```
 
+### Commit updated files
+
+If the above commands change the repository, all changes must be committed immediately with the message `Update skills` and the package gitmoji.
+
 ## When work is complete
 
-If any skill with `share: github` in its frontmatter was modified, it must be written back to its repository.
+If any skill with `share: github` in its frontmatter is modified, it must be written back to its share repository.
+
+Symlink files pointing to the .skillshare directory, and the diretory itself must always be committed in a separate commit, as above.
 
 ### Git Push
 
@@ -30,13 +37,3 @@ git -C .skillshare/skills/_origin commit -m `<message>`
 git -C .skillshare/skills/_origin push || echo "No changes to commit"
 ```
 `<message>` must follow standard git commit rules.
-
-### Refresh
-
-Re-apply the Update Skills section.
-
-## Rules
-
-- DO NOT use other `skillshare`
-- Always run `git status` before committing
-- If there are no changes, continue without failing

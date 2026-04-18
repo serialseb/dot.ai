@@ -78,8 +78,8 @@ Task files always get commited:
 
 ## ⛔ User approval gate
 
-STOP. Before doing anything else, you MUST ask the user for explicit approval to merge and push.
-Present a summary of the commits (branch name, commit count, HEAD sha) and wait for confirmation.
+STOP. Before doing anything else, you MUST ask the user for explicit approval to merge sqash.
+You must present ONCE a summary of ALL the commits (branch name, commit count, HEAD sha) and wait for confirmation.
 Do NOT proceed with any of the steps below until user confirmation.
 
 ## Marker tag
