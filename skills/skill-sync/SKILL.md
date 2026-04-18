@@ -14,9 +14,8 @@ Skills are shared across projects and must stay consistent.
 ### Update skills
 
 ```bash
-skillshare update --all --project
-skillshare init --project --discover
-skillshare sync --all --project
+skillshare update --all --project --force
+skillshare sync --all --force -p
 ```
 
 ## When work is complete
@@ -26,11 +25,9 @@ If any skill with `share: github` in its frontmatter was modified, it must be wr
 ### Git Push
 
 ```bash
-cd .skillshare/skills/_origin
-git status
-git add .
-git commit -m "<message>" || echo "No changes to commit"
-git push origin main
+git -C .skillshare/skills/_origin add -A
+git -C .skillshare/skills/_origin commit -m `<message>`
+git -C .skillshare/skills/_origin push || echo "No changes to commit"
 ```
 `<message>` must follow standard git commit rules.
 
