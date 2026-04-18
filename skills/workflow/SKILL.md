@@ -16,9 +16,10 @@ Any task, plan, workstream or otherwise set of tasks a coding agent executes seq
 The whole workflow must be followed, you must complete all these steps.
 
 Workflow Start:
- - [ ] Feature branch created with initial commit
  - [ ] Working tree cleaned
+ - [ ] Skills synchronized
  - [ ] Git commit format understood
+ - [ ] Feature branch and initial commit created
 
 Workflow End:
  - [ ] Created marker tag
@@ -29,25 +30,28 @@ Workflow End:
 ## Rules
 
 - Any work MUST folow these rules unless user override
-- work MUST NOT start until all conditions in workflow start has been executed
+- work MUST NOT start writing codeuntil all conditions in workflow start has been executed
 
 # Workflow start
 
 A workflow is called differently in different agents: plans, tasks, workstreams or others. They are all synonyms.
 
-Before any work is started, by the user or the agent, a workflow has started.
+As soon as the user indicates the start of a new workflow, the woorkflow has started and you ust follow  the rues of the workflow start immediately.
 
-- work never starts on a dirty tree. Ask the user for confirmation to sash dirty files or do a WIP git commit
+- work never starts on a dirty tree. Ask the user for confirmation to stash dirty files, do a WIP git commit or turn it into a workflow that is now complete.
 - all work MUST be done on a feature branch `f/<feature-id>`
 - a feature branch MUST ONLY branch from the `main` branch, never from a feature brnch.
-
-
-- Merge commits are forbidden.
+- Merge commits during work in a workflow are forbidden, unless overruled by the user.
 - All work MUST be done on feature branches unless specifically allowed by the user with branch-name being (`f/<feature-id>`)
 
-## Initial commit on feature branch 
+## Workflow Preparation
 
-Once a feature branch has been created, create a first empty commit, describing the aim of the future branch, and a trailer called `Base` with the SHA of the commit from wich the branch was created.
+
+As soon as a user indicates wanting to start a workflow:
+ - synchronize the skills
+ - Use the description provided by the user or ask for the user for a short intent.
+- Create a feature branch `f/<feature-id>` from the latest `main` branch. The `<feature-id>` should be a concise, human-readable identifier for the work being done (e.g., `f/add-login-feature`, `f/fix-payment-bug`, `f/refactor-auth-module`).
+ - Create a commit describing the intent of the future branch, and a trailer called `Base` with the SHA of the commit from which the branch was created. with a `tada` gitmoji. This commit serves as the anchor for the branch and the starting point for all future work in this workflow.
 
 # Workflow end
 
@@ -108,7 +112,7 @@ Co-authored-by: <model> <junie@serialseb.com>
 - `<commits>` - Number of commits squashed
 - `<lead-time>` - Human-readable lead time (e.g., "2d 8h", "1m 2d") from the first commit of the branch (not fron the commit from which you branched, normally main)
 - `<branch>` - The feature branch you are merging
-- `<lead-time>` Human-readable lead time (e.g., "2d 8h", "1m 2d"), the time it took between the first commit and the merge commit.
+- `<lead-time>` Human-readable lead time (e.g., "2d 8h", "1m 2d"), the time it took between the initial feature branch commit and the merge commit.
 - For anything else follow the rules in the git-commit skill.
 
 After creating the squash commit, write the commit count as a git note on the new HEAD:
