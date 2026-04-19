@@ -1,21 +1,16 @@
-mkdir -p .skillshare/skills
-skillshare init --project --discover
+# Clear old state but keep your intended structure
+rm -rf .skillshare/skills .skillshare/extras
+
+# Initialize (creates .skillshare/ structure)
 
 
-rm -rf .skillshare/extras
-ln -s .skillshare/skills/_origin/extras .skillshare/extras
-cat > .skillshare/config.yaml <<'EOF'
 
-source: github.com/SafeKeepIt/dot.ai
-
+# Write your config
+cat > .skillshare/config.yaml <<'eof'
+source: https://github.com/SafeKeepIt/dot.ai
 mode: merge
 target_naming: standard
-
-targets:
-  - claude
-  - opencode
-  - codex
-
+targets: [claude, opencode, codex]
 extras:
   - name: agents
     targets:
@@ -24,12 +19,16 @@ extras:
         flatten: true
   - name: conf
     targets:
-      - path: .skillshare/config.yaml 
+      - path: .skillshare/config.yaml
         mode: merge
         flatten: true
+eof
 
-EOF
-
-skillshare install --project
+# Pull from Git (This replaces your non-working 'install' step)
 skillshare sync --project --all
 skillshare update --project --all --force --prune
+
+# Final link (do this AFTER update to ensure _origin is populated)
+ln -s .skillshare/skills/_origin/extras .skillshare/extras
+
+# Final sync to push to targets (claude, etc.)
