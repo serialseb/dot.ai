@@ -1,7 +1,7 @@
 ---
 name: workflow
 description: MUST be read before starting any task, plan, or coding work, and again when finishing. Defines branch rules, commit format, merge procedure, and cleanup steps. No work begins or ends without following this.
-
+tracked: true
 metadata:
   tags: [git, workflow, start, begin, task, plan, branch, finish, complete, end, merge, squash, cleanup]
   share: github
@@ -110,7 +110,7 @@ Co-authored-by: <model> <junie@serialseb.com>
 
 - `<sha>` - Short SHA of feature branch HEAD (the 🏁 commit)
 - `<commits>` - Number of commits squashed
-- `<lead-time>` - Human-readable lead time (e.g., "2d 8h", "1m 2d") from the first commit of the branch (not fron the commit from which you branched, normally main)
+- `<lead-time>` - Human-readable lead time (e.g., "2d 8h", "1m 2d") from the first commit of the branch (NOT from the commit from which you branched, normally main)
 - `<branch>` - The feature branch you are merging
 - `<lead-time>` Human-readable lead time (e.g., "2d 8h", "1m 2d"), the time it took between the initial feature branch commit and the merge commit.
 - For anything else follow the rules in the git-commit skill.
