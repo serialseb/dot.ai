@@ -94,9 +94,15 @@ interface ICommand {
 }
 ```
 
+## Repo root anchor
+
+All project paths resolve relative to the **repo root**: the top-level directory of the enclosing git working tree, located by walking up from the current working directory until a `.git` directory (or file, for worktrees) is found. dotai always anchors to this directory regardless of the caller's repo root. This means there is exactly one `.ai/` per repository, never one per subdirectory. The term `<repo>` below refers to this path.
+
+If no enclosing git repo is found, commands exit with `error: dotai requires a git repository`.
+
 ## Config file
 
-Path: `<cwd>/.ai/config.jsonc`
+Path: `<repo>/.ai/config.jsonc`
 
 Shape:
 ```jsonc
@@ -142,7 +148,7 @@ Operations used:
 
 ## Agent detection
 
-`AgentDetector` scans CWD for hardcoded list:
+`AgentDetector` scans repo root for hardcoded list:
 - `.claude`
 - `.codex`
 - `.opencode`
@@ -157,7 +163,7 @@ Returns list of directories present. Does not create missing ones. Adding new ag
 
 For each repo clone `<clone>` and each detected agent dir `<agent>`:
 - Source: `<clone>/skills/<skill-name>/` (directory)
-- Target: `<cwd>/<agent>/skills/<skill-name>` (symlink to directory)
+- Target: `<repo>/<agent>/skills/<skill-name>` (symlink to directory)
 
 Uniform path across agents for 0.1. Per-agent mappings may land later; not configurable now.
 
@@ -167,7 +173,7 @@ For each repo clone `<clone>`:
 - Walk `<clone>/files/` recursively.
 - For each regular file at relative path `p` inside `files/`:
   - Source: `<clone>/files/<p>`
-  - Target: `<cwd>/<p>` (symlink to file)
+  - Target: `<repo>/<p>` (symlink to file)
   - Create any missing parent directories at target.
 
 ### Creation behavior
@@ -185,7 +191,7 @@ If two registered repositories both expose a skill or file at the same relative 
 
 ### Orphan cleanup (dotai-owned only)
 
-A symlink is dotai-owned iff its target resolves to a path inside any `<cwd>/.ai/repositories/*/` directory. Orphan cleanup only ever touches dotai-owned symlinks. Symlinks pointing elsewhere are never inspected or removed.
+A symlink is dotai-owned iff its target resolves to a path inside any `<repo>/.ai/repositories/*/` directory. Orphan cleanup only ever touches dotai-owned symlinks. Symlinks pointing elsewhere are never inspected or removed.
 
 After processing a clone (or when no push was needed):
 - Walk each agent's `<agent>/skills/` dir. For every dotai-owned symlink whose target does not exist, remove it.
@@ -210,7 +216,7 @@ Purpose: consumer project's git does not track cloned source repos.
 Signature: `dotai init <owner>/<repo>`
 
 Flow:
-1. Validate CWD is inside a git repo (walk up from CWD looking for `.git`). On failure exit 1 with `error: dotai requires a git repository`.
+1. Validate repo root is inside a git repo (walk up from repo root looking for `.git`). On failure exit 1 with `error: dotai requires a git repository`.
 2. Validate arg matches `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`. On failure exit 1.
 3. Derive URI `https://github.com/<owner>/<repo>` and clone dir name `<owner>_<repo>`.
 4. Ensure `.ai/` and `.ai/repositories/` exist.
@@ -237,7 +243,7 @@ Flow:
    5. Resolve default branch via `git symbolic-ref refs/remotes/origin/HEAD`.
    6. `git rebase origin/<branch>`. On non-zero: leave rebase state in place, record needs-manual, continue.
    7. `git push origin <branch>`. On non-zero: record needs-manual, continue.
-   8. Refresh symlinks for this clone (skills into each agent dir; files into CWD). Record any conflicts.
+   8. Refresh symlinks for this clone (skills into each agent dir; files into repo root). Record any conflicts.
    9. Orphan-cleanup symlinks targeting this clone.
 4. Print report. If `needs_manual` non-empty:
    - List each repo path with a brief reason (rebase in progress, push failed, symlink conflict).
@@ -294,7 +300,7 @@ Cases:
 - `ConfigStore` — add key to empty, add key to existing, idempotent, read tolerates comments.
 - `GitignoreWriter` — create, append, idempotent.
 - `AgentDetector` — finds existing dirs, ignores absent, handles no agents.
-- `InitCommand` — against a temp CWD wired to a local bare git repo via `file://` URI: produces `.ai/` tree, config entry, clone dir, symlinks.
+- `InitCommand` — against a temp repo root wired to a local bare git repo via `file://` URI: produces `.ai/` tree, config entry, clone dir, symlinks.
 - `SyncCommand` — no-changes sync is a no-op; edit inside symlink produces commit and push; rebase-in-progress is reported.
 
 Fixtures (`LocalGitRepo`) create a temp bare repo plus a populated working repo, returning a local URI. No network required.
