@@ -46,9 +46,6 @@
     <DirectPInvoke Include="libc" />
   </ItemGroup>
   <ItemGroup>
-    <IlcArg Include="--substitution:$(MSBuildThisFileDirectory)ILLink.Substitutions.xml" />
-  </ItemGroup>
-  <ItemGroup>
     <LinkerArg Include="-Wl,-exported_symbols_list,$(MSBuildThisFileDirectory)exports.txt" />
     <LinkerArg Include="-Wl,-x" />
     <LinkerArg Include="-Wl,-no_compact_unwind" />
