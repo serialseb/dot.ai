@@ -46,6 +46,10 @@
     <DirectPInvoke Include="libc" />
   </ItemGroup>
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Runtime.InteropServices.BuiltInComInterop.IsSupported" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.Diagnostics.DiagnosticSource.IsSupported" Value="false" />
+  </ItemGroup>
+  <ItemGroup>
     <LinkerArg Include="-Wl,-exported_symbols_list,$(MSBuildThisFileDirectory)exports.txt" />
     <LinkerArg Include="-Wl,-x" />
     <LinkerArg Include="-Wl,-no_compact_unwind" />
