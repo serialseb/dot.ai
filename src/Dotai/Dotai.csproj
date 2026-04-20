@@ -57,5 +57,6 @@
     <LinkerArg Include="-Wl,-no_compact_unwind" />
     <LinkerArg Include="-Wl,-no_function_starts" />
     <LinkerArg Include="-Wl,-no_data_const" />
+    <LinkerArg Include="-Wl,-dead_strip_dylibs" />
   </ItemGroup>
 </Project>
