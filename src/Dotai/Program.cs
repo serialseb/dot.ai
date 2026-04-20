@@ -1,35 +1,41 @@
-using System.Text;
+using System.Runtime.InteropServices;
 using Dotai.Commands;
 using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai;
 
-public static class Program
+public static unsafe class Program
 {
-    public static int Main(string[] args)
+    // Managed entry point stub — only invoked in non-AOT (test/debug) builds.
+    // In AOT, ILC replaces this with NativeMain via CustomNativeMain + UnmanagedCallersOnly.
+    public static int Main() => 0;
+
+    [UnmanagedCallersOnly(EntryPoint = "main")]
+    public static int NativeMain(int argc, byte** argv)
     {
-        // CLR hands us string[] at this single entry point.
-        // Convert once to Arg[] (UTF-8 bytes) and dispatch bytes from here on.
-        var argv = new Arg[args.Length];
-        for (int i = 0; i < args.Length; i++)
-            argv[i] = new Arg(Encoding.UTF8.GetBytes(args[i]));
+        // argv is a C-style array of null-terminated UTF-8 byte*.
+        // Skip argv[0] (program name). No string is ever materialised.
+        var count = argc > 1 ? argc - 1 : 0;
+        var args = new Arg[count];
+        for (int i = 0; i < count; i++)
+            args[i] = new Arg(FastString.CloneNullTerminated(argv[i + 1]));
 
-        if (argv.Length == 0) return new HelpCommand().Execute(argv);
+        if (args.Length == 0) return new HelpCommand().Execute(args);
 
-        var first = argv[0];
-        var rest  = argv[1..];
+        var first = args[0].AsFast;
+        var rest  = args[1..];
 
-        if (first.AsFast.Equals((FastString)"--help"u8) || first.AsFast.Equals((FastString)"-h"u8))
+        if (first.Equals("--help"u8) || first.Equals("-h"u8))
             return new HelpCommand().Execute(rest);
-        if (first.AsFast.Equals((FastString)"init"u8))
+        if (first.Equals("init"u8))
             return new InitCommand().Execute(rest);
-        if (first.AsFast.Equals((FastString)"sync"u8))
+        if (first.Equals("sync"u8))
             return new SyncCommand().Execute(rest);
 
-        var buf = new ByteBuffer(64);
+        var buf = new ByteBuffer(32);
         buf.Append("unknown command: "u8);
-        buf.Append(first.Data);
+        buf.Append(first.Bytes);
         ConsoleOut.Error(buf.Span);
         new HelpCommand().Execute(Array.Empty<Arg>());
         return 1;

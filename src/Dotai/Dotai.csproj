@@ -35,5 +35,6 @@
     <NativeDebugSymbols>false</NativeDebugSymbols>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
+    <CustomNativeMain>true</CustomNativeMain>
   </PropertyGroup>
 </Project>

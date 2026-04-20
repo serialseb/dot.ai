@@ -11,8 +11,7 @@ public sealed class InitCommand : ICommand
     public InitCommand() : this(Fs.GetCurrentDirectory()) { }
     public InitCommand(byte[] startDir) { _startDir = startDir; }
 
-    // TEST-SEAM: tests pass a string URL override; converted to bytes here.
-    // This is the only remaining Encoding call in production-adjacent code.
+    // TEST-SEAM: tests pass a pre-encoded byte[] URL override.
     public byte[]? CloneUrlOverride { get; init; }
 
     public string Name => "init";

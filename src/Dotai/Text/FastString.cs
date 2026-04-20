@@ -31,4 +31,22 @@ public readonly ref struct FastString
     }
 
     private static bool IsWs(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\r' || b == (byte)'\n';
+
+    public static unsafe FastString FromNullTerminated(byte* ptr)
+    {
+        if (ptr == null) return default;
+        int len = 0;
+        while (ptr[len] != 0) len++;
+        return new FastString(new ReadOnlySpan<byte>(ptr, len));
+    }
+
+    public static unsafe byte[] CloneNullTerminated(byte* ptr)
+    {
+        if (ptr == null) return Array.Empty<byte>();
+        int len = 0;
+        while (ptr[len] != 0) len++;
+        var result = new byte[len];
+        new ReadOnlySpan<byte>(ptr, len).CopyTo(result);
+        return result;
+    }
 }
