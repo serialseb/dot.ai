@@ -1,4 +1,3 @@
-using System.Text;
 using Dotai.Text;
 
 namespace Dotai.Services;
@@ -49,11 +48,5 @@ public static class GitignoreWriter
         Fs.WriteAllBytes(path, appended);
     }
 
-    // String shim retained for tests (tests stay in .NET-land).
-    public static void EnsureLine(string path, string line)
-    {
-        FastString pathFs = Encoding.UTF8.GetBytes(path);
-        FastString lineFs = Encoding.UTF8.GetBytes(line);
-        EnsureLine(pathFs, lineFs);
-    }
+
 }

@@ -7,10 +7,10 @@ namespace Dotai.Commands;
 
 public sealed class SyncCommand : ICommand
 {
-    private readonly string _startDir;
+    private readonly byte[] _startDir;
 
-    public SyncCommand() : this(Encoding.UTF8.GetString(Fs.GetCurrentDirectory())) { }
-    public SyncCommand(string startDir) { _startDir = startDir; }
+    public SyncCommand() : this(Fs.GetCurrentDirectory()) { }
+    public SyncCommand(byte[] startDir) { _startDir = startDir; }
 
     public bool Silent { get; init; }
     public bool Force { get; init; }
@@ -20,13 +20,12 @@ public sealed class SyncCommand : ICommand
 
     public SyncReport? LastReport { get; private set; }
 
-    public int Execute(string[] args)
+    public int Execute(Arg[] args)
     {
         ParsedArgs parsed;
         try { parsed = SharedFlags.Parse(args, _startDir); }
         catch (ArgumentException ex)
         {
-            // TEMP(Phase3c): ex.Message is a string; Phase 3c will propagate byte errors.
             ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
             return 1;
         }
@@ -35,14 +34,13 @@ public sealed class SyncCommand : ICommand
         var startDir = parsed.StartDir;
         var force = parsed.Force || Force;
 
-        if (rest.Length > 0 && rest[0] == "--help")
+        if (rest.Length > 0 && rest[0].AsFast.Equals((FastString)"--help"u8))
         {
             ConsoleOut.Info(Help_u8);
             return 0;
         }
 
-        var startDirBytes = Encoding.UTF8.GetBytes(startDir);
-        if (!RepoRootResolver.TryFind(startDirBytes, out var repoRoot))
+        if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
@@ -80,14 +78,13 @@ public sealed class SyncCommand : ICommand
         }
 
         var agentNames = AgentDetector.Detect((FastString)repoRoot);
-        // PHASE3-TEMP: SkillLinker still takes string[]; Phase 3c will flip.
-        var agentStrings = new string[agentNames.Length];
+        var agentArgs = new Arg[agentNames.Length];
         for (int i = 0; i < agentNames.Length; i++)
-            agentStrings[i] = Encoding.UTF8.GetString(agentNames[i]);
+            agentArgs[i] = new Arg(agentNames[i]);
 
         if (force)
         {
-            SkillLinker.ForceReset(Encoding.UTF8.GetString(repoRoot), agentStrings);
+            SkillLinker.ForceReset((FastString)repoRoot, agentArgs);
             ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost."u8);
         }
 
@@ -95,7 +92,7 @@ public sealed class SyncCommand : ICommand
 
         foreach (var urlBytes in config)
         {
-            SyncOne(repoRoot, urlBytes, agentStrings, report);
+            SyncOne(repoRoot, urlBytes, agentArgs, report);
         }
 
         LastReport = report;
@@ -105,18 +102,16 @@ public sealed class SyncCommand : ICommand
             ConsoleOut.Warn("completed with issues:"u8);
             foreach (var r in report.ManualRepos)
             {
-                var buf = new ByteBuffer(64);
+                var buf = new ByteBuffer(r.Length + 16);
                 buf.Append("  \xe2\x80\xa2 manual: "u8);
-                // TEMP(Phase3c): r is string; Phase 3c will propagate byte messages.
-                buf.Append(Encoding.UTF8.GetBytes(r));
+                buf.Append(r);
                 ConsoleOut.Detail(buf.Span);
             }
             foreach (var c in report.Conflicts)
             {
-                var buf = new ByteBuffer(64);
+                var buf = new ByteBuffer(c.Length + 18);
                 buf.Append("  \xe2\x80\xa2 conflict: "u8);
-                // TEMP(Phase3c): c is string; Phase 3c will propagate byte messages.
-                buf.Append(Encoding.UTF8.GetBytes(c));
+                buf.Append(c);
                 ConsoleOut.Detail(buf.Span);
             }
             ConsoleOut.Hint("resolve the issues above, then run 'dotai sync' again"u8);
@@ -143,71 +138,86 @@ public sealed class SyncCommand : ICommand
     private static readonly byte[] Help_u8 =
         "dotai sync [standard flags] — sync all configured source repositories."u8.ToArray();
 
-    private static void SyncOne(byte[] repoRoot, byte[] urlBytes, ReadOnlySpan<string> agents, SyncReport report)
+    private static void SyncOne(byte[] repoRoot, byte[] urlBytes, ReadOnlySpan<Arg> agents, SyncReport report)
     {
         FastString urlFast = urlBytes;
         var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
-        var cloneName = Encoding.UTF8.GetString(cloneNameBytes);
         var clone = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), Fs.Combine("repositories"u8, cloneNameBytes));
-        var cloneStr = Encoding.UTF8.GetString(clone);
 
         if (!Fs.IsDirectory(Fs.Combine(clone, ".git"u8)))
         {
-            report.ManualRepos.Add($"{cloneStr} (not cloned)");
+            var msg = new ByteBuffer(clone.Length + 16);
+            msg.Append(clone);
+            msg.Append(" (not cloned)"u8);
+            report.ManualRepos.Add(msg.Span.ToArray());
             return;
         }
 
-        if (GitClient.RebaseInProgress(cloneStr))
+        if (GitClient.RebaseInProgress((FastString)clone))
         {
-            report.ManualRepos.Add($"{cloneStr} (rebase in progress)");
+            var msg = new ByteBuffer(clone.Length + 24);
+            msg.Append(clone);
+            msg.Append(" (rebase in progress)"u8);
+            report.ManualRepos.Add(msg.Span.ToArray());
             return;
         }
 
-        var status = GitClient.StatusPorcelain(cloneStr);
+        var status = GitClient.StatusPorcelain((FastString)clone);
         if (!ByteOps.IsBlank(status.StdOut))
         {
-            if (GitClient.AddAll(cloneStr).ExitCode != 0
-                || GitClient.Commit(cloneStr, "dotai sync").ExitCode != 0)
+            if (GitClient.AddAll((FastString)clone).ExitCode != 0
+                || GitClient.Commit((FastString)clone, (FastString)"dotai sync"u8).ExitCode != 0)
             {
-                report.ManualRepos.Add($"{cloneStr} (commit failed)");
+                var msg = new ByteBuffer(clone.Length + 20);
+                msg.Append(clone);
+                msg.Append(" (commit failed)"u8);
+                report.ManualRepos.Add(msg.Span.ToArray());
                 return;
             }
         }
 
-        if (GitClient.Fetch(cloneStr).ExitCode != 0)
+        if (GitClient.Fetch((FastString)clone).ExitCode != 0)
         {
-            report.ManualRepos.Add($"{cloneStr} (fetch failed)");
+            var msg = new ByteBuffer(clone.Length + 18);
+            msg.Append(clone);
+            msg.Append(" (fetch failed)"u8);
+            report.ManualRepos.Add(msg.Span.ToArray());
             return;
         }
 
-        var branchBytes = GitClient.DefaultBranch(cloneStr);
+        var branchBytes = GitClient.DefaultBranch((FastString)clone);
 
         var upstream = new ByteBuffer(32);
         upstream.Append("origin/"u8);
         upstream.Append(branchBytes);
-        // PHASE3-TEMP: Rebase still takes string upstream; Phase 3c will flip the signature.
-        var rebase = GitClient.Rebase(cloneStr, Encoding.UTF8.GetString(upstream.Span));
+        var rebase = GitClient.Rebase((FastString)clone, (FastString)upstream.Span.ToArray());
         if (rebase.ExitCode != 0)
         {
-            report.ManualRepos.Add($"{cloneStr} (rebase failed; resolve in .git/rebase-merge)");
+            var msg = new ByteBuffer(clone.Length + 48);
+            msg.Append(clone);
+            msg.Append(" (rebase failed; resolve in .git/rebase-merge)"u8);
+            report.ManualRepos.Add(msg.Span.ToArray());
             return;
         }
 
-        // PHASE3-TEMP: Push still takes string branch; Phase 3c will flip the signature.
-        var push = GitClient.Push(cloneStr, Encoding.UTF8.GetString(branchBytes));
+        var push = GitClient.Push((FastString)clone, (FastString)branchBytes);
         if (push.ExitCode != 0)
         {
             var stderrTrimmed = ByteOps.Trim(push.StdErr);
-            report.ManualRepos.Add($"{cloneStr} (push failed: {Encoding.UTF8.GetString(stderrTrimmed)})");
+            var msg = new ByteBuffer(clone.Length + stderrTrimmed.Length + 20);
+            msg.Append(clone);
+            msg.Append(" (push failed: "u8);
+            msg.Append(stderrTrimmed);
+            msg.AppendByte((byte)')');
+            report.ManualRepos.Add(msg.Span.ToArray());
             return;
         }
 
-        var repoRootStr = Encoding.UTF8.GetString(repoRoot);
         var skillsBefore = report.SkillsLinked;
         var filesBefore = report.FilesLinked;
-        SkillLinker.LinkSkills(repoRootStr, cloneStr, agents, report);
-        SkillLinker.LinkFiles(repoRootStr, cloneStr, report);
-        SkillLinker.CleanupOrphans(repoRootStr, agents);
+        SkillLinker.LinkSkills((FastString)repoRoot, (FastString)clone, agents, report);
+        SkillLinker.LinkFiles((FastString)repoRoot, (FastString)clone, report);
+        SkillLinker.CleanupOrphans((FastString)repoRoot, agents);
         var deltaSkills = report.SkillsLinked - skillsBefore;
         var deltaFiles = report.FilesLinked - filesBefore;
 

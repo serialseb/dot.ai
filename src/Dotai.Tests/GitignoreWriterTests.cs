@@ -1,18 +1,22 @@
+using System.Text;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
+using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class GitignoreWriterTests
 {
+    private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
+
     [Fact]
     public void CreatesFileWhenMissing()
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, ".gitignore");
 
-        GitignoreWriter.EnsureLine(path, "repositories/");
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
 
         Assert.Contains("repositories/", File.ReadAllText(path));
     }
@@ -24,7 +28,7 @@ public class GitignoreWriterTests
         var path = Path.Combine(tmp.Path, ".gitignore");
         File.WriteAllText(path, "node_modules/\n");
 
-        GitignoreWriter.EnsureLine(path, "repositories/");
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
 
         var text = File.ReadAllText(path);
         Assert.Contains("node_modules/", text);
@@ -38,8 +42,8 @@ public class GitignoreWriterTests
         var path = Path.Combine(tmp.Path, ".gitignore");
         File.WriteAllText(path, "repositories/\n");
 
-        GitignoreWriter.EnsureLine(path, "repositories/");
-        GitignoreWriter.EnsureLine(path, "repositories/");
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
 
         var count = File.ReadAllText(path).Split("repositories/").Length - 1;
         Assert.Equal(1, count);
@@ -51,7 +55,7 @@ public class GitignoreWriterTests
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "a", "b", ".gitignore");
 
-        GitignoreWriter.EnsureLine(path, "repositories/");
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
 
         Assert.True(File.Exists(path));
     }
@@ -63,7 +67,7 @@ public class GitignoreWriterTests
         var path = Path.Combine(tmp.Path, ".gitignore");
         File.WriteAllText(path, "node_modules/");
 
-        GitignoreWriter.EnsureLine(path, "repositories/");
+        GitignoreWriter.EnsureLine((FastString)B(path), "repositories/"u8);
 
         var text = File.ReadAllText(path);
         Assert.Contains("node_modules/", text);

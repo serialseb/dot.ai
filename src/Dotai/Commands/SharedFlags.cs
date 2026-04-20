@@ -1,10 +1,9 @@
-using System.Collections.Generic;
-using System.Text;
 using Dotai.Services;
+using Dotai.Text;
 
 namespace Dotai.Commands;
 
-public sealed record ParsedArgs(string StartDir, bool Force, string[] Positional);
+public sealed record ParsedArgs(byte[] StartDir, bool Force, Arg[] Positional);
 
 public static class SharedFlags
 {
@@ -14,23 +13,23 @@ public static class SharedFlags
         ExpectingProjectPath,
     }
 
-    public static ParsedArgs Parse(string[] args, string defaultStartDir)
+    public static ParsedArgs Parse(Arg[] args, FastString defaultStartDir)
     {
         var state = State.Normal;
-        var startDir = defaultStartDir;
+        var startDir = defaultStartDir.Bytes.ToArray();
         var force = false;
-        var positional = new List<string>();
+        var positional = new List<Arg>();
 
         foreach (var token in args)
         {
             switch (state)
             {
                 case State.Normal:
-                    if (token == "-p" || token == "--project")
+                    if (token.AsFast.Equals((FastString)"-p"u8) || token.AsFast.Equals((FastString)"--project"u8))
                     {
                         state = State.ExpectingProjectPath;
                     }
-                    else if (token == "-f" || token == "--force")
+                    else if (token.AsFast.Equals((FastString)"-f"u8) || token.AsFast.Equals((FastString)"--force"u8))
                     {
                         force = true;
                     }
@@ -40,7 +39,10 @@ public static class SharedFlags
                     }
                     else if (IsFlagToken(token))
                     {
-                        throw new System.ArgumentException($"unknown flag: {token}");
+                        var buf = new Ui.ByteBuffer(token.Data.Length + 16);
+                        buf.Append("unknown flag: "u8);
+                        buf.Append(token.Data);
+                        throw new System.ArgumentException(System.Text.Encoding.UTF8.GetString(buf.Span));
                     }
                     else
                     {
@@ -49,7 +51,7 @@ public static class SharedFlags
                     break;
 
                 case State.ExpectingProjectPath:
-                    startDir = Encoding.UTF8.GetString(Fs.GetFullPath(Encoding.UTF8.GetBytes(token)));
+                    startDir = Fs.GetFullPath(token.AsFast);
                     state = State.Normal;
                     break;
             }
@@ -61,7 +63,9 @@ public static class SharedFlags
         return new ParsedArgs(startDir, force, positional.ToArray());
     }
 
-    private static bool IsHelpToken(string t) => t == "--help" || t == "-h";
+    private static bool IsHelpToken(Arg t)
+        => t.AsFast.Equals((FastString)"--help"u8) || t.AsFast.Equals((FastString)"-h"u8);
 
-    private static bool IsFlagToken(string t) => t.Length > 0 && t[0] == '-';
+    private static bool IsFlagToken(Arg t)
+        => t.Data.Length > 0 && t.Data[0] == (byte)'-';
 }

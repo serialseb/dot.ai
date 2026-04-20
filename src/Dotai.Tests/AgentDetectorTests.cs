@@ -1,17 +1,21 @@
+using System.Text;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
+using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class AgentDetectorTests
 {
+    private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
+
     [Fact]
     public void ReturnsEmptyWhenNoAgents()
     {
         using var tmp = new TempDir();
 
-        var agents = AgentDetector.Detect(tmp.Path);
+        var agents = AgentDetector.Detect((FastString)B(tmp.Path));
 
         Assert.Empty(agents);
     }
@@ -22,10 +26,10 @@ public class AgentDetectorTests
         using var tmp = new TempDir();
         Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
 
-        var agents = AgentDetector.Detect(tmp.Path);
+        var agents = AgentDetector.Detect((FastString)B(tmp.Path));
 
         Assert.Single(agents);
-        Assert.Equal(".claude", agents[0]);
+        Assert.Equal(".claude"u8.ToArray(), agents[0]);
     }
 
     [Fact]
@@ -36,9 +40,10 @@ public class AgentDetectorTests
         Directory.CreateDirectory(Path.Combine(tmp.Path, ".codex"));
         Directory.CreateDirectory(Path.Combine(tmp.Path, ".opencode"));
 
-        var agents = AgentDetector.Detect(tmp.Path);
+        var agents = AgentDetector.Detect((FastString)B(tmp.Path));
 
-        Assert.Equal(new[] { ".claude", ".codex", ".opencode" }, agents.ToArray());
+        Assert.Equal(new[] { ".claude"u8.ToArray(), ".codex"u8.ToArray(), ".opencode"u8.ToArray() },
+            agents, ByteArrayComparer.Instance);
     }
 
     [Fact]
@@ -47,8 +52,15 @@ public class AgentDetectorTests
         using var tmp = new TempDir();
         File.WriteAllText(Path.Combine(tmp.Path, ".claude"), "");
 
-        var agents = AgentDetector.Detect(tmp.Path);
+        var agents = AgentDetector.Detect((FastString)B(tmp.Path));
 
         Assert.Empty(agents);
+    }
+
+    private sealed class ByteArrayComparer : IEqualityComparer<byte[]>
+    {
+        public static readonly ByteArrayComparer Instance = new();
+        public bool Equals(byte[]? x, byte[]? y) => x.AsSpan().SequenceEqual(y);
+        public int GetHashCode(byte[] obj) => obj.Length;
     }
 }

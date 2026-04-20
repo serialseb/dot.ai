@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Dotai.Services;
 
@@ -7,15 +6,17 @@ namespace Dotai.Services;
 // macOS only (see Libc.cs for the portability note).
 internal static unsafe class PosixSpawn
 {
+    // executableNullTerminated must be a null-terminated UTF-8 byte array
+    // (e.g. "git\0"u8.ToArray() or NullTerminate(someBytes)).
     internal static (int exitCode, byte[] stdout, byte[] stderr) Run(
-        string executable, string[] argv)
+        byte[] executableNullTerminated, byte[][] argv)
     {
         var argCount = argv.Length;
         var argBytes = new byte[argCount][];
         for (var i = 0; i < argCount; i++)
-            argBytes[i] = ToNullTerminatedUtf8(argv[i]);
+            argBytes[i] = NullTerminate(argv[i]);
 
-        var execBytes = ToNullTerminatedUtf8(executable);
+        var execBytes = executableNullTerminated;
 
         var stdoutFds = stackalloc int[2];
         var stderrFds = stackalloc int[2];
@@ -103,11 +104,12 @@ internal static unsafe class PosixSpawn
         return ms.ToArray();
     }
 
-    private static byte[] ToNullTerminatedUtf8(string s)
+    // Appends a null byte to an already-UTF-8 byte array.
+    private static byte[] NullTerminate(byte[] s)
     {
-        var len = Encoding.UTF8.GetByteCount(s);
-        var buf = new byte[len + 1]; // zero-initialised by runtime → null terminator
-        Encoding.UTF8.GetBytes(s, buf);
+        var buf = new byte[s.Length + 1];
+        s.CopyTo(buf, 0);
         return buf;
     }
+
 }

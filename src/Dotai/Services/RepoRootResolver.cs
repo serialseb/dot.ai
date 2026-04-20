@@ -1,4 +1,3 @@
-using System.Text;
 using Dotai.Text;
 
 namespace Dotai.Services;
@@ -20,14 +19,6 @@ public static class RepoRootResolver
         }
         repoRoot = [];
         return false;
-    }
-
-    // String shim retained for tests (tests stay in .NET-land).
-    public static string? Find(string startDir)
-    {
-        FastString fs = Encoding.UTF8.GetBytes(startDir);
-        if (!TryFind(fs, out var root)) return null;
-        return Encoding.UTF8.GetString(root);
     }
 
     private static bool IsSameBytes(byte[] a, byte[] b)

@@ -8,9 +8,11 @@ namespace Dotai.Tests;
 
 public class ConfigStoreTests
 {
+    private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
+
     private static bool ContainsUrl(List<byte[]> config, string url)
     {
-        var target = Encoding.UTF8.GetBytes(url);
+        var target = B(url);
         foreach (var item in config)
             if (item.AsSpan().SequenceEqual(target)) return true;
         return false;
@@ -22,7 +24,7 @@ public class ConfigStoreTests
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "config.jsonc");
 
-        var config = ConfigStore.Load(path);
+        var config = ConfigStore.Load((FastString)B(path));
 
         Assert.Empty(config);
     }
@@ -32,11 +34,11 @@ public class ConfigStoreTests
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "config.jsonc");
-        var config = ConfigStore.Load(path);
+        var config = ConfigStore.Load((FastString)B(path));
 
         ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
-        ConfigStore.Save(path, config);
-        var reloaded = ConfigStore.Load(path);
+        ConfigStore.Save((FastString)B(path), config);
+        var reloaded = ConfigStore.Load((FastString)B(path));
 
         Assert.True(ContainsUrl(reloaded, "https://github.com/foo/bar"));
     }
@@ -70,7 +72,7 @@ public class ConfigStoreTests
         var path = Path.Combine(tmp.Path, "config.jsonc");
         File.WriteAllText(path, "// top comment\n{\n  \"https://github.com/foo/bar\": {} // inline\n}\n");
 
-        var config = ConfigStore.Load(path);
+        var config = ConfigStore.Load((FastString)B(path));
 
         Assert.True(ContainsUrl(config, "https://github.com/foo/bar"));
     }
@@ -82,7 +84,7 @@ public class ConfigStoreTests
         var path = Path.Combine(tmp.Path, "config.jsonc");
         File.WriteAllText(path, "[\"not an object\"]");
 
-        Assert.Throws<InvalidDataException>(() => ConfigStore.Load(path));
+        Assert.Throws<InvalidDataException>(() => ConfigStore.Load((FastString)B(path)));
     }
 
     [Fact]
@@ -93,7 +95,7 @@ public class ConfigStoreTests
         var config = new List<byte[]>();
         ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
 
-        ConfigStore.Save(path, config);
+        ConfigStore.Save((FastString)B(path), config);
 
         Assert.True(File.Exists(path));
     }

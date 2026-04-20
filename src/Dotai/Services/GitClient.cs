@@ -1,4 +1,3 @@
-using System.Text;
 using Dotai.Text;
 
 namespace Dotai.Services;
@@ -13,65 +12,75 @@ public sealed class GitResult
 
 public static class GitClient
 {
+    // Null-terminated "git\0" for posix_spawnp — no string encoding needed.
+    private static readonly byte[] GitExec = "git\0"u8.ToArray();
+
     // Passes "-C <workDir>" as the first arguments so posix_spawnp does not
     // need a working-directory parameter (posix_spawn has no direct equivalent
     // of ProcessStartInfo.WorkingDirectory).
-    public static GitResult Run(string workDir, params string[] args)
+    public static GitResult Run(FastString workDir, params byte[][] args)
     {
         var argv = BuildArgv(workDir, args);
-        var (exitCode, stdout, stderr) = PosixSpawn.Run("git", argv);
+        var (exitCode, stdout, stderr) = PosixSpawn.Run(GitExec, argv);
         return new GitResult(exitCode, stdout, stderr);
     }
 
-    private static string[] BuildArgv(string workDir, string[] args)
+    private static byte[][] BuildArgv(FastString workDir, byte[][] args)
     {
-        var argv = new string[1 + 2 + args.Length];
-        argv[0] = "git";
-        argv[1] = "-C";
-        argv[2] = workDir;
-        args.CopyTo(argv, 3);
+        // argv[0] = "git", argv[1] = "-C", argv[2] = workDir, argv[3..] = args
+        var argv = new byte[1 + 2 + args.Length][];
+        argv[0] = "git"u8.ToArray();
+        argv[1] = "-C"u8.ToArray();
+        argv[2] = workDir.Bytes.ToArray();
+        for (int i = 0; i < args.Length; i++)
+            argv[3 + i] = args[i];
         return argv;
     }
 
-    public static GitResult Clone(string url, string target)
+    public static GitResult Clone(FastString url, FastString target)
     {
-        var targetBytes = Encoding.UTF8.GetBytes(target);
-        var parent = Fs.GetDirectoryName(targetBytes);
+        var parent = Fs.GetDirectoryName(target);
         if (parent.Length > 0) Fs.CreateDirectory(parent);
-        return Run(Encoding.UTF8.GetString(parent), "clone", url, target);
+        // Clone uses the CWD (parent dir) as workDir, since target is absolute.
+        var argv = new byte[][]
+        {
+            "git"u8.ToArray(),
+            "clone"u8.ToArray(),
+            url.Bytes.ToArray(),
+            target.Bytes.ToArray(),
+        };
+        var (exitCode, stdout, stderr) = PosixSpawn.Run(GitExec, argv);
+        return new GitResult(exitCode, stdout, stderr);
     }
 
-    public static GitResult StatusPorcelain(string workDir) =>
-        Run(workDir, "status", "--porcelain");
+    public static GitResult StatusPorcelain(FastString workDir) =>
+        Run(workDir, "status"u8.ToArray(), "--porcelain"u8.ToArray());
 
-    public static GitResult AddAll(string workDir) =>
-        Run(workDir, "add", "-A");
+    public static GitResult AddAll(FastString workDir) =>
+        Run(workDir, "add"u8.ToArray(), "-A"u8.ToArray());
 
-    public static GitResult Commit(string workDir, string message) =>
-        Run(workDir, "commit", "-m", message);
+    public static GitResult Commit(FastString workDir, FastString message) =>
+        Run(workDir, "commit"u8.ToArray(), "-m"u8.ToArray(), message.Bytes.ToArray());
 
-    public static GitResult Fetch(string workDir) =>
-        Run(workDir, "fetch", "origin");
+    public static GitResult Fetch(FastString workDir) =>
+        Run(workDir, "fetch"u8.ToArray(), "origin"u8.ToArray());
 
-    public static GitResult Rebase(string workDir, string upstream) =>
-        Run(workDir, "rebase", upstream);
+    public static GitResult Rebase(FastString workDir, FastString upstream) =>
+        Run(workDir, "rebase"u8.ToArray(), upstream.Bytes.ToArray());
 
-    public static GitResult Push(string workDir, string branch) =>
-        Run(workDir, "push", "origin", branch);
+    public static GitResult Push(FastString workDir, FastString branch) =>
+        Run(workDir, "push"u8.ToArray(), "origin"u8.ToArray(), branch.Bytes.ToArray());
 
-    public static byte[] DefaultBranch(string workDir)
+    public static byte[] DefaultBranch(FastString workDir)
     {
-        var r = Run(workDir, "symbolic-ref", "refs/remotes/origin/HEAD");
+        var r = Run(workDir, "symbolic-ref"u8.ToArray(), "refs/remotes/origin/HEAD"u8.ToArray());
         if (r.ExitCode != 0) return "main"u8.ToArray();
         return ByteOps.GetDefaultBranchFromSymbolicRef(r.StdOut).ToArray();
     }
 
-    public static bool RebaseInProgress(string workDir)
-    {
-        var wd = Encoding.UTF8.GetBytes(workDir);
-        return Fs.IsDirectory(Fs.Combine(Fs.Combine(wd, ".git"u8), "rebase-merge"u8))
-            || Fs.IsDirectory(Fs.Combine(Fs.Combine(wd, ".git"u8), "rebase-apply"u8));
-    }
+    public static bool RebaseInProgress(FastString workDir)
+        => Fs.IsDirectory(Fs.Combine(Fs.Combine(workDir, ".git"u8), "rebase-merge"u8))
+        || Fs.IsDirectory(Fs.Combine(Fs.Combine(workDir, ".git"u8), "rebase-apply"u8));
 
     /// <summary>
     /// Derives a filesystem-safe clone directory name from a remote URL.

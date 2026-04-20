@@ -1,3 +1,4 @@
+using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
@@ -7,7 +8,7 @@ public sealed class HelpCommand : ICommand
     public string Name => "--help";
     public string Help => "Show this message.";
 
-    public int Execute(string[] args)
+    public int Execute(Arg[] args)
     {
         ConsoleOut.Info("""
             dotai — share AI skills and files across projects via symlinks 🤖

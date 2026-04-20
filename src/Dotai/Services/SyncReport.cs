@@ -2,8 +2,8 @@ namespace Dotai.Services;
 
 public sealed class SyncReport
 {
-    public List<string> ManualRepos { get; } = new();
-    public List<string> Conflicts { get; } = new();
+    public List<byte[]> ManualRepos { get; } = new();
+    public List<byte[]> Conflicts { get; } = new();
     public int SkillsLinked { get; set; }
     public int FilesLinked { get; set; }
 

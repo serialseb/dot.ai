@@ -1,16 +1,14 @@
-using System.Text;
 using Dotai.Text;
+using Dotai.Ui;
 
 namespace Dotai.Services;
 
 public static class SkillLinker
 {
     public static void LinkSkills(
-        string repoRoot, string clone, ReadOnlySpan<string> agents, SyncReport report)
+        FastString repoRoot, FastString clone, ReadOnlySpan<Arg> agents, SyncReport report)
     {
-        var cloneBytes = Encoding.UTF8.GetBytes(clone);
-        var repoRootBytes = Encoding.UTF8.GetBytes(repoRoot);
-        var skillsDir = Fs.Combine(cloneBytes, "skills"u8);
+        var skillsDir = Fs.Combine(clone, "skills"u8);
         if (!Fs.IsDirectory(skillsDir)) return;
 
         foreach (var skillPath in Fs.EnumerateDirectories(skillsDir))
@@ -18,8 +16,7 @@ public static class SkillLinker
             var skillName = Fs.GetFileName(skillPath);
             foreach (var agent in agents)
             {
-                var agentBytes = Encoding.UTF8.GetBytes(agent);
-                var targetDir = Fs.Combine(Fs.Combine(repoRootBytes, agentBytes), "skills"u8);
+                var targetDir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
                 Fs.CreateDirectory(targetDir);
                 var target = Fs.Combine(targetDir, skillName);
                 if (EnsureSymlink(target, skillPath, report)) report.SkillsLinked++;
@@ -27,53 +24,47 @@ public static class SkillLinker
         }
     }
 
-    public static void LinkFiles(string repoRoot, string clone, SyncReport report)
+    public static void LinkFiles(FastString repoRoot, FastString clone, SyncReport report)
     {
-        var cloneBytes = Encoding.UTF8.GetBytes(clone);
-        var repoRootBytes = Encoding.UTF8.GetBytes(repoRoot);
-        var filesDir = Fs.Combine(cloneBytes, "files"u8);
+        var filesDir = Fs.Combine(clone, "files"u8);
         if (!Fs.IsDirectory(filesDir)) return;
 
         foreach (var filePath in Fs.EnumerateFiles(filesDir, recursive: true))
         {
             var rel = Fs.GetRelativePath(filesDir, filePath);
-            var target = Fs.Combine(repoRootBytes, rel);
+            var target = Fs.Combine(repoRoot, rel);
             var parent = Fs.GetDirectoryName(target);
             if (parent.Length > 0) Fs.CreateDirectory(parent);
             if (EnsureSymlink(target, filePath, report)) report.FilesLinked++;
         }
     }
 
-    public static void CleanupOrphans(string repoRoot, ReadOnlySpan<string> agents)
+    public static void CleanupOrphans(FastString repoRoot, ReadOnlySpan<Arg> agents)
     {
-        var repoRootBytes = Encoding.UTF8.GetBytes(repoRoot);
-        var ownedPrefix = Fs.Combine(Fs.Combine(repoRootBytes, ".ai"u8), "repositories"u8);
+        var ownedPrefix = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "repositories"u8);
 
         foreach (var agent in agents)
         {
-            var agentBytes = Encoding.UTF8.GetBytes(agent);
-            var dir = Fs.Combine(Fs.Combine(repoRootBytes, agentBytes), "skills"u8);
+            var dir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
             if (!Fs.IsDirectory(dir)) continue;
             foreach (var entry in Fs.EnumerateFileSystemEntries(dir))
                 RemoveIfDanglingAndOwned(entry, ownedPrefix);
         }
     }
 
-    public static void ForceReset(string repoRoot, ReadOnlySpan<string> agents)
+    public static void ForceReset(FastString repoRoot, ReadOnlySpan<Arg> agents)
     {
-        var repoRootBytes = Encoding.UTF8.GetBytes(repoRoot);
-        var ownedPrefix = Fs.Combine(Fs.Combine(repoRootBytes, ".ai"u8), "repositories"u8);
+        var ownedPrefix = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "repositories"u8);
 
         foreach (var agent in agents)
         {
-            var agentBytes = Encoding.UTF8.GetBytes(agent);
-            var dir = Fs.Combine(Fs.Combine(repoRootBytes, agentBytes), "skills"u8);
+            var dir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
             if (!Fs.IsDirectory(dir)) continue;
             foreach (var entry in Fs.EnumerateFileSystemEntries(dir))
                 RemoveIfOwned(entry, ownedPrefix);
         }
 
-        RemoveOwnedFileSymlinksInTree(repoRootBytes, ownedPrefix);
+        RemoveOwnedFileSymlinksInTree(repoRoot.Bytes.ToArray(), ownedPrefix);
     }
 
     private static void RemoveOwnedFileSymlinksInTree(byte[] repoRoot, byte[] ownedPrefix)
@@ -132,8 +123,10 @@ public static class SkillLinker
             var existingLinkTarget = Fs.ReadSymbolicLinkTarget(target);
             if (existingLinkTarget == null)
             {
-                report.Conflicts.Add(
-                    $"{Encoding.UTF8.GetString(target)}: exists as real file/directory, not a symlink");
+                var buf = new ByteBuffer(target.Length + 48);
+                buf.Append(target);
+                buf.Append(": exists as real file/directory, not a symlink"u8);
+                report.Conflicts.Add(buf.Span.ToArray());
                 return false;
             }
 
@@ -146,9 +139,14 @@ public static class SkillLinker
 
             if (IsInDifferentClone(source, existingAbsolute))
             {
-                report.Conflicts.Add(
-                    $"{Encoding.UTF8.GetString(Fs.GetFileName(target))} provided by " +
-                    $"{Encoding.UTF8.GetString(source)} and {Encoding.UTF8.GetString(existingAbsolute)}");
+                var name = Fs.GetFileName(target);
+                var buf = new ByteBuffer(name.Length + source.Length + existingAbsolute.Length + 20);
+                buf.Append(name);
+                buf.Append(" provided by "u8);
+                buf.Append(source);
+                buf.Append(" and "u8);
+                buf.Append(existingAbsolute);
+                report.Conflicts.Add(buf.Span.ToArray());
                 return false;
             }
 

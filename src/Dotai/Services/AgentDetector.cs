@@ -27,14 +27,5 @@ public static class AgentDetector
         return trimmed;
     }
 
-    // String shim retained for tests (tests stay in .NET-land).
-    public static string[] Detect(string repoRoot)
-    {
-        var roots = System.Text.Encoding.UTF8.GetBytes(repoRoot);
-        var byteResult = Detect((FastString)roots);
-        var result = new string[byteResult.Length];
-        for (int i = 0; i < byteResult.Length; i++)
-            result[i] = System.Text.Encoding.UTF8.GetString(byteResult[i]);
-        return result;
-    }
+
 }

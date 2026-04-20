@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Dotai.Text;
 
@@ -86,13 +85,6 @@ public static class ConfigStore
         }
         Fs.WriteAllBytes(path, stream.ToArray());
     }
-
-    // String shims retained for tests (tests stay in .NET-land).
-    public static List<byte[]> Load(string path)
-        => Load((FastString)Encoding.UTF8.GetBytes(path));
-
-    public static void Save(string path, List<byte[]> config)
-        => Save((FastString)Encoding.UTF8.GetBytes(path), config);
 
     private static bool ContainsBytes(List<byte[]> list, FastString candidate)
     {

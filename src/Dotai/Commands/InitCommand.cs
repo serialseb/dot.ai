@@ -7,23 +7,24 @@ namespace Dotai.Commands;
 
 public sealed class InitCommand : ICommand
 {
-    private readonly string _startDir;
+    private readonly byte[] _startDir;
 
-    public InitCommand() : this(Encoding.UTF8.GetString(Fs.GetCurrentDirectory())) { }
-    public InitCommand(string startDir) { _startDir = startDir; }
+    public InitCommand() : this(Fs.GetCurrentDirectory()) { }
+    public InitCommand(byte[] startDir) { _startDir = startDir; }
 
-    public string? CloneUrlOverride { get; init; }
+    // TEST-SEAM: tests pass a string URL override; converted to bytes here.
+    // This is the only remaining Encoding call in production-adjacent code.
+    public byte[]? CloneUrlOverride { get; init; }
 
     public string Name => "init";
     public string Help => "dotai init [standard flags] <owner>/<repo> — register a source repository and sync.";
 
-    public int Execute(string[] args)
+    public int Execute(Arg[] args)
     {
         ParsedArgs parsed;
         try { parsed = SharedFlags.Parse(args, _startDir); }
         catch (ArgumentException ex)
         {
-            // TEMP(Phase3c): ex.Message is a string; Phase 3c will propagate byte errors.
             ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
             return 1;
         }
@@ -36,26 +37,24 @@ public sealed class InitCommand : ICommand
             ConsoleOut.Info(Help_u8);
             return 1;
         }
-        if (rest[0] == "--help")
+        if (rest[0].AsFast.Equals((FastString)"--help"u8))
         {
             ConsoleOut.Info(Help_u8);
             return 0;
         }
 
         var arg = rest[0];
-        if (!IsValidOwnerRepo(arg))
+        if (!IsValidOwnerRepo(arg.Data))
         {
             var buf = new ByteBuffer(64);
             buf.Append("invalid argument: '"u8);
-            // PHASE3-TEMP: arg is string from argv; Phase 3c will propagate byte args.
-            buf.Append(Encoding.UTF8.GetBytes(arg));
+            buf.Append(arg.Data);
             buf.Append("' (expected <owner>/<repo>)"u8);
             ConsoleOut.Error(buf.Span);
             return 1;
         }
 
-        var startDirBytes = Encoding.UTF8.GetBytes(startDir);
-        if (!RepoRootResolver.TryFind(startDirBytes, out var repoRoot))
+        if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
@@ -64,23 +63,18 @@ public sealed class InitCommand : ICommand
         if (Fs.IsDirectory(Fs.Combine(repoRoot, ".skillshare"u8)))
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
 
-        var parts = arg.Split('/');
-        var owner = parts[0];
-        var repo = parts[1];
+        // Split <owner>/<repo> on '/'
+        int slash = arg.Data.AsSpan().IndexOf((byte)'/');
+        var ownerBytes = arg.Data.AsSpan(0, slash).ToArray();
+        var repoBytes  = arg.Data.AsSpan(slash + 1).ToArray();
 
-        // Compose the URL as bytes directly when possible; CloneUrlOverride is a TEMP string boundary.
         byte[] urlBytes;
         if (CloneUrlOverride != null)
         {
-            // PHASE3-TEMP: CloneUrlOverride is a string override for tests; Phase 3c removes this path.
-            urlBytes = Encoding.UTF8.GetBytes(CloneUrlOverride);
+            urlBytes = CloneUrlOverride;
         }
         else
         {
-            // Compose "https://github.com/<owner>/<repo>" via ByteBuffer — no string interpolation.
-            // PHASE3-TEMP: owner/repo come from argv strings; Phase 3c will use byte args.
-            var ownerBytes = Encoding.UTF8.GetBytes(owner);
-            var repoBytes = Encoding.UTF8.GetBytes(repo);
             var urlBuf = new ByteBuffer(32 + ownerBytes.Length + repoBytes.Length);
             urlBuf.Append("https://github.com/"u8);
             urlBuf.Append(ownerBytes);
@@ -91,7 +85,6 @@ public sealed class InitCommand : ICommand
 
         FastString urlFast = urlBytes;
         var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
-        var cloneName = Encoding.UTF8.GetString(cloneNameBytes);
 
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
         var reposDir = Fs.Combine(aiDir, "repositories"u8);
@@ -137,10 +130,7 @@ public sealed class InitCommand : ICommand
         var cloneDir = Fs.Combine(reposDir, cloneNameBytes);
         if (!Fs.IsDirectory(Fs.Combine(cloneDir, ".git"u8)))
         {
-            // PHASE3-TEMP: GitClient.Clone still takes string URL; Phase 3c will flip.
-            var result = GitClient.Clone(
-                Encoding.UTF8.GetString(urlBytes),
-                Encoding.UTF8.GetString(cloneDir));
+            var result = GitClient.Clone(urlFast, (FastString)cloneDir);
             if (result.ExitCode != 0)
             {
                 var stderrTrimmed = ByteOps.Trim(result.StdErr);
@@ -158,8 +148,8 @@ public sealed class InitCommand : ICommand
 
         Robot.ShowIfTty();
 
-        var sync = new SyncCommand(startDir) { Silent = true, Force = parsed.Force };
-        var syncCode = sync.Execute(Array.Empty<string>());
+        var sync = new SyncCommand(parsed.StartDir) { Silent = true, Force = parsed.Force };
+        var syncCode = sync.Execute(Array.Empty<Arg>());
         if (syncCode == 0)
         {
             var report = sync.LastReport;
@@ -188,14 +178,14 @@ public sealed class InitCommand : ICommand
     private static readonly byte[] Help_u8 =
         "dotai init [standard flags] <owner>/<repo> — register a source repository and sync."u8.ToArray();
 
-    private static bool IsValidOwnerRepo(string s)
+    private static bool IsValidOwnerRepo(byte[] data)
     {
-        if (string.IsNullOrEmpty(s)) return false;
+        if (data.Length == 0) return false;
         int slashCount = 0;
         int segmentLength = 0;
-        foreach (var c in s)
+        foreach (var b in data)
         {
-            if (c == '/')
+            if (b == (byte)'/')
             {
                 if (segmentLength == 0) return false;
                 if (slashCount == 1) return false;
@@ -203,15 +193,15 @@ public sealed class InitCommand : ICommand
                 segmentLength = 0;
                 continue;
             }
-            if (!IsAllowedChar(c)) return false;
+            if (!IsAllowedByte(b)) return false;
             segmentLength++;
         }
         return slashCount == 1 && segmentLength > 0;
     }
 
-    private static bool IsAllowedChar(char c) =>
-        (c >= 'A' && c <= 'Z')
-        || (c >= 'a' && c <= 'z')
-        || (c >= '0' && c <= '9')
-        || c == '.' || c == '_' || c == '-';
+    private static bool IsAllowedByte(byte b) =>
+        (b >= (byte)'A' && b <= (byte)'Z')
+        || (b >= (byte)'a' && b <= (byte)'z')
+        || (b >= (byte)'0' && b <= (byte)'9')
+        || b == (byte)'.' || b == (byte)'_' || b == (byte)'-';
 }
