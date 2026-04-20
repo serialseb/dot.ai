@@ -1,3 +1,4 @@
+using System.Text;
 using Dotai.Commands;
 using Dotai.Ui;
 
@@ -16,7 +17,11 @@ public static class Program
         if (first == "init") return new InitCommand().Execute(rest);
         if (first == "sync") return new SyncCommand().Execute(rest);
 
-        ConsoleOut.Error($"unknown command: {first}");
+        var buf = new ByteBuffer(64);
+        buf.Append("unknown command: "u8);
+        // TEMP(Phase3): first is string argv; Phase 3 will use byte argv.
+        buf.Append(Encoding.UTF8.GetBytes(first));
+        ConsoleOut.Error(buf.Span);
         new HelpCommand().Execute(Array.Empty<string>());
         return 1;
     }

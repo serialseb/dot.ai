@@ -42,4 +42,10 @@ internal static unsafe partial class Libc
 
     [LibraryImport("libc", EntryPoint = "waitpid")]
     internal static partial int Waitpid(int pid, out int status, int options);
+
+    [LibraryImport("libc", EntryPoint = "write")]
+    internal static partial long Write(int fd, byte* buf, nuint count);
+
+    [LibraryImport("libc", EntryPoint = "isatty")]
+    internal static partial int IsAtty(int fd);
 }

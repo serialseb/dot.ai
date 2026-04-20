@@ -2,7 +2,7 @@ namespace Dotai.Ui;
 
 public static class Robot
 {
-    private const string Art = """
+    private static readonly byte[] Art = """
            [■_■]
           /|___|\
          /_|   |_\
@@ -11,13 +11,16 @@ public static class Robot
           /    \
          /      \
         /________\
-        """;
+
+        """u8.ToArray();
+
+    private static ReadOnlySpan<byte> ClearScreen => "\x1b[2J\x1b[H"u8;
 
     public static void ShowIfTty()
     {
-        if (Console.IsOutputRedirected) return;
-        Console.WriteLine(Art);
+        if (!Stdio.IsTty(1)) return;
+        Stdio.Write(1, Art);
         Thread.Sleep(1000);
-        Console.Write("\x1b[2J\x1b[H");
+        Stdio.Write(1, ClearScreen);
     }
 }

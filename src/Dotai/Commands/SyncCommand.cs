@@ -1,3 +1,4 @@
+using System.Text;
 using Dotai.Services;
 using Dotai.Ui;
 
@@ -22,7 +23,12 @@ public sealed class SyncCommand : ICommand
     {
         ParsedArgs parsed;
         try { parsed = SharedFlags.Parse(args, _startDir); }
-        catch (ArgumentException ex) { ConsoleOut.Error(ex.Message); return 1; }
+        catch (ArgumentException ex)
+        {
+            // TEMP(Phase3): ex.Message is a string; Phase 3 will propagate byte errors.
+            ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
+            return 1;
+        }
 
         var rest = parsed.Positional;
         var startDir = parsed.StartDir;
@@ -30,19 +36,19 @@ public sealed class SyncCommand : ICommand
 
         if (rest.Length > 0 && rest[0] == "--help")
         {
-            ConsoleOut.Info(Help);
+            ConsoleOut.Info(Help_u8);
             return 0;
         }
 
         var repoRoot = RepoRootResolver.Find(startDir);
         if (repoRoot == null)
         {
-            ConsoleOut.Error("dotai requires a git repository");
+            ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
         }
 
         if (Directory.Exists(Path.Combine(repoRoot, ".skillshare")))
-            ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure.");
+            ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
 
         var configPath = Path.Combine(repoRoot, ".ai", "config.jsonc");
         List<string> config;
@@ -54,17 +60,22 @@ public sealed class SyncCommand : ICommand
         {
             if (!force)
             {
-                ConsoleOut.Error($"config at {configPath} is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost).");
+                var buf = new ByteBuffer(128);
+                buf.Append("config at "u8);
+                // TEMP(Phase3): configPath is string; Phase 3 will propagate byte paths.
+                buf.Append(Encoding.UTF8.GetBytes(configPath));
+                buf.Append(" is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost)."u8);
+                ConsoleOut.Error(buf.Span);
                 return 2;
             }
             config = new List<string>();
             ConfigStore.Save(configPath, config);
-            ConsoleOut.Warn("--force: reset malformed config. previous configuration lost.");
+            ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
 
         if (config.Count == 0)
         {
-            ConsoleOut.Error("no repositories configured (run dotai init first)");
+            ConsoleOut.Error("no repositories configured (run dotai init first)"u8);
             return 1;
         }
 
@@ -73,7 +84,7 @@ public sealed class SyncCommand : ICommand
         if (force)
         {
             SkillLinker.ForceReset(repoRoot, agents);
-            ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost.");
+            ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost."u8);
         }
 
         var report = new SyncReport();
@@ -87,21 +98,46 @@ public sealed class SyncCommand : ICommand
 
         if (!report.Ok)
         {
-            ConsoleOut.Warn("completed with issues:");
-            foreach (var r in report.ManualRepos) ConsoleOut.Detail($"  • manual: {r}");
-            foreach (var c in report.Conflicts) ConsoleOut.Detail($"  • conflict: {c}");
-            ConsoleOut.Hint("resolve the issues above, then run 'dotai sync' again");
+            ConsoleOut.Warn("completed with issues:"u8);
+            foreach (var r in report.ManualRepos)
+            {
+                var buf = new ByteBuffer(64);
+                buf.Append("  \xe2\x80\xa2 manual: "u8);
+                // TEMP(Phase3): r is string; Phase 3 will propagate byte messages.
+                buf.Append(Encoding.UTF8.GetBytes(r));
+                ConsoleOut.Detail(buf.Span);
+            }
+            foreach (var c in report.Conflicts)
+            {
+                var buf = new ByteBuffer(64);
+                buf.Append("  \xe2\x80\xa2 conflict: "u8);
+                // TEMP(Phase3): c is string; Phase 3 will propagate byte messages.
+                buf.Append(Encoding.UTF8.GetBytes(c));
+                ConsoleOut.Detail(buf.Span);
+            }
+            ConsoleOut.Hint("resolve the issues above, then run 'dotai sync' again"u8);
             return 3;
         }
 
         if (!Silent)
         {
-            var plural = config.Count == 1 ? "repository" : "repositories";
-            ConsoleOut.Success(
-                $"synced {report.SkillsLinked} skills, {report.FilesLinked} files across {config.Count} {plural}");
+            var plural = config.Count == 1 ? "repository"u8 : "repositories"u8;
+            var buf = new ByteBuffer(64);
+            buf.Append("synced "u8);
+            buf.AppendInt(report.SkillsLinked);
+            buf.Append(" skills, "u8);
+            buf.AppendInt(report.FilesLinked);
+            buf.Append(" files across "u8);
+            buf.AppendInt(config.Count);
+            buf.AppendByte((byte)' ');
+            buf.Append(plural);
+            ConsoleOut.Success(buf.Span);
         }
         return 0;
     }
+
+    private static readonly byte[] Help_u8 =
+        "dotai sync [standard flags] — sync all configured source repositories."u8.ToArray();
 
     private static void SyncOne(string repoRoot, string url, ReadOnlySpan<string> agents, SyncReport report)
     {
@@ -120,7 +156,7 @@ public sealed class SyncCommand : ICommand
         }
 
         var status = GitClient.StatusPorcelain(clone);
-        if (!string.IsNullOrWhiteSpace(status.StdOut))
+        if (!ByteOps.IsBlank(status.StdOut))
         {
             if (GitClient.AddAll(clone).ExitCode != 0
                 || GitClient.Commit(clone, "dotai sync").ExitCode != 0)
@@ -136,18 +172,22 @@ public sealed class SyncCommand : ICommand
             return;
         }
 
-        var branch = GitClient.DefaultBranch(clone);
-        var rebase = GitClient.Rebase(clone, $"origin/{branch}");
+        var branchBytes = GitClient.DefaultBranch(clone);
+        // TEMP(Phase3): rebase upstream is still a string arg; Phase 3 will pass bytes.
+        var upstream = "origin/" + Encoding.UTF8.GetString(branchBytes);
+        var rebase = GitClient.Rebase(clone, upstream);
         if (rebase.ExitCode != 0)
         {
             report.ManualRepos.Add($"{clone} (rebase failed; resolve in .git/rebase-merge)");
             return;
         }
 
-        var push = GitClient.Push(clone, branch);
+        var push = GitClient.Push(clone, Encoding.UTF8.GetString(branchBytes)); // TEMP(Phase3)
         if (push.ExitCode != 0)
         {
-            report.ManualRepos.Add($"{clone} (push failed: {push.StdErr.Trim()})");
+            var stderrTrimmed = ByteOps.Trim(push.StdErr);
+            // TEMP(Phase3): push error message still stored as string for ManualRepos list.
+            report.ManualRepos.Add($"{clone} (push failed: {Encoding.UTF8.GetString(stderrTrimmed)})");
             return;
         }
 
@@ -158,7 +198,16 @@ public sealed class SyncCommand : ICommand
         SkillLinker.CleanupOrphans(repoRoot, agents);
         var deltaSkills = report.SkillsLinked - skillsBefore;
         var deltaFiles = report.FilesLinked - filesBefore;
-        ConsoleOut.Info($"  • {url}: {deltaSkills} skills, {deltaFiles} files");
-    }
 
+        var msgBuf = new ByteBuffer(64);
+        msgBuf.Append("  \xe2\x80\xa2 "u8);
+        // TEMP(Phase3): url is string; Phase 3 will propagate byte URLs.
+        msgBuf.Append(Encoding.UTF8.GetBytes(url));
+        msgBuf.Append(": "u8);
+        msgBuf.AppendInt(deltaSkills);
+        msgBuf.Append(" skills, "u8);
+        msgBuf.AppendInt(deltaFiles);
+        msgBuf.Append(" files"u8);
+        ConsoleOut.Info(msgBuf.Span);
+    }
 }

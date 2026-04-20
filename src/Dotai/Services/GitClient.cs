@@ -2,7 +2,13 @@ using System.Text;
 
 namespace Dotai.Services;
 
-public record GitResult(int ExitCode, string StdOut, string StdErr);
+public sealed class GitResult
+{
+    public int ExitCode { get; }
+    public byte[] StdOut { get; }
+    public byte[] StdErr { get; }
+    public GitResult(int exit, byte[] stdout, byte[] stderr) { ExitCode = exit; StdOut = stdout; StdErr = stderr; }
+}
 
 public static class GitClient
 {
@@ -13,7 +19,7 @@ public static class GitClient
     {
         var argv = BuildArgv(workDir, args);
         var (exitCode, stdout, stderr) = PosixSpawn.Run("git", argv);
-        return new GitResult(exitCode, Encoding.UTF8.GetString(stdout), Encoding.UTF8.GetString(stderr));
+        return new GitResult(exitCode, stdout, stderr);
     }
 
     private static string[] BuildArgv(string workDir, string[] args)
@@ -52,13 +58,11 @@ public static class GitClient
     public static GitResult Push(string workDir, string branch) =>
         Run(workDir, "push", "origin", branch);
 
-    public static string DefaultBranch(string workDir)
+    public static byte[] DefaultBranch(string workDir)
     {
         var r = Run(workDir, "symbolic-ref", "refs/remotes/origin/HEAD");
-        if (r.ExitCode != 0) return "main";
-        var line = r.StdOut.Trim();
-        var slash = line.LastIndexOf('/');
-        return slash < 0 ? "main" : line[(slash + 1)..];
+        if (r.ExitCode != 0) return "main"u8.ToArray();
+        return ByteOps.GetDefaultBranchFromSymbolicRef(r.StdOut).ToArray();
     }
 
     public static bool RebaseInProgress(string workDir) =>

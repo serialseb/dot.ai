@@ -22,7 +22,7 @@ public sealed class HelpCommand : ICommand
               -f, --force            reset dotai-owned symlinks and overwrite malformed config
 
             config is kept in .ai/config.jsonc at the git repo root.
-            """);
+            """u8);
         return 0;
     }
 }

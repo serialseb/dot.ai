@@ -82,7 +82,7 @@ public class SyncCommandTests
         Assert.Equal(0, code);
         var log = GitClient.Run(Path.Combine(project, ".ai", "repositories", cloneKey),
             "log", "--oneline");
-        Assert.Contains("dotai sync", log.StdOut);
+        Assert.True(log.StdOut.AsSpan().IndexOf("dotai sync"u8) >= 0);
     }
 
     [Fact]

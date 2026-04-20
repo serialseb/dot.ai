@@ -1,3 +1,4 @@
+using System.Text;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
 using Xunit;
@@ -6,6 +7,14 @@ namespace Dotai.Tests;
 
 public class GitClientTests
 {
+    private static bool IsBlankBytes(byte[] b)
+    {
+        foreach (var x in b)
+            if (x != (byte)' ' && x != (byte)'\t' && x != (byte)'\r' && x != (byte)'\n')
+                return false;
+        return true;
+    }
+
     [Fact]
     public void CloneCreatesRepository()
     {
@@ -30,7 +39,7 @@ public class GitClientTests
         var r = GitClient.StatusPorcelain(work);
 
         Assert.Equal(0, r.ExitCode);
-        Assert.Equal(string.Empty, r.StdOut.Trim());
+        Assert.True(IsBlankBytes(r.StdOut));
     }
 
     [Fact]
@@ -43,7 +52,7 @@ public class GitClientTests
 
         var r = GitClient.StatusPorcelain(work);
 
-        Assert.NotEqual(string.Empty, r.StdOut.Trim());
+        Assert.False(IsBlankBytes(r.StdOut));
     }
 
     [Fact]
@@ -55,7 +64,7 @@ public class GitClientTests
 
         var branch = GitClient.DefaultBranch(work);
 
-        Assert.Equal("main", branch);
+        Assert.Equal("main"u8.ToArray(), branch);
     }
 
     [Fact]
