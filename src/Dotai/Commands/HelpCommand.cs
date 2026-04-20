@@ -17,6 +17,9 @@ public sealed class HelpCommand : ICommand
               dotai sync                  sync all configured repositories
               dotai --help                this message
 
+            standard flags (accepted by every command, placed after the command):
+              -p, --project <path>   run as if invoked from <path> (default: current directory)
+
             config is kept in .ai/config.jsonc at the git repo root.
             """);
         return 0;

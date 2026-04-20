@@ -63,4 +63,25 @@ public class InitCommandTests
         Assert.True(Directory.Exists(link));
         Assert.NotNull(new FileInfo(link).LinkTarget);
     }
+
+    [Fact]
+    public void RespectsDashProjectFlag()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+        {
+            var skill = Path.Combine(w, "skills", "alpha");
+            Directory.CreateDirectory(skill);
+            File.WriteAllText(Path.Combine(skill, "SKILL.md"), "hi");
+        });
+        var repo = MakeGitRepoWithAgent(tmp.Path);
+        var foreign = Path.Combine(tmp.Path, "unrelated-cwd");
+        Directory.CreateDirectory(foreign);
+        var cmd = new InitCommand(foreign) { CloneUrlOverride = remoteUrl };
+
+        var code = cmd.Execute(new[] { "-p", repo, "owner/repo" });
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.jsonc")));
+    }
 }

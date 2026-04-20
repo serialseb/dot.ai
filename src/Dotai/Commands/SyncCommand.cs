@@ -13,19 +13,26 @@ public sealed class SyncCommand : ICommand
     public bool Silent { get; init; }
 
     public string Name => "sync";
-    public string Help => "dotai sync — sync all configured source repositories.";
+    public string Help => "dotai sync [standard flags] — sync all configured source repositories.";
 
     public SyncReport? LastReport { get; private set; }
 
     public int Execute(string[] args)
     {
-        if (args.Length > 0 && args[0] == "--help")
+        ParsedArgs parsed;
+        try { parsed = SharedFlags.Parse(args, _startDir); }
+        catch (ArgumentException ex) { ConsoleOut.Error(ex.Message); return 1; }
+
+        var rest = parsed.Positional;
+        var startDir = parsed.StartDir;
+
+        if (rest.Length > 0 && rest[0] == "--help")
         {
             ConsoleOut.Info(Help);
             return 0;
         }
 
-        var repoRoot = RepoRootResolver.Find(_startDir);
+        var repoRoot = RepoRootResolver.Find(startDir);
         if (repoRoot == null)
         {
             ConsoleOut.Error("dotai requires a git repository");

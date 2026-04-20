@@ -15,29 +15,36 @@ public sealed class InitCommand : ICommand
     public string? CloneUrlOverride { get; init; }
 
     public string Name => "init";
-    public string Help => "dotai init <owner>/<repo> — register a source repository and sync.";
+    public string Help => "dotai init [standard flags] <owner>/<repo> — register a source repository and sync.";
 
     public int Execute(string[] args)
     {
-        if (args.Length == 0)
+        ParsedArgs parsed;
+        try { parsed = SharedFlags.Parse(args, _startDir); }
+        catch (ArgumentException ex) { ConsoleOut.Error(ex.Message); return 1; }
+
+        var rest = parsed.Positional;
+        var startDir = parsed.StartDir;
+
+        if (rest.Length == 0)
         {
             ConsoleOut.Info(Help);
             return 1;
         }
-        if (args[0] == "--help")
+        if (rest[0] == "--help")
         {
             ConsoleOut.Info(Help);
             return 0;
         }
 
-        var arg = args[0];
+        var arg = rest[0];
         if (!ArgFormat.IsMatch(arg))
         {
             ConsoleOut.Error($"invalid argument: '{arg}' (expected <owner>/<repo>)");
             return 1;
         }
 
-        var repoRoot = RepoRootResolver.Find(_startDir);
+        var repoRoot = RepoRootResolver.Find(startDir);
         if (repoRoot == null)
         {
             ConsoleOut.Error("dotai requires a git repository");
@@ -77,7 +84,7 @@ public sealed class InitCommand : ICommand
 
         Robot.ShowIfTty();
 
-        var sync = new SyncCommand(_startDir) { Silent = true };
+        var sync = new SyncCommand(startDir) { Silent = true };
         var syncCode = sync.Execute(Array.Empty<string>());
         if (syncCode == 0)
         {
