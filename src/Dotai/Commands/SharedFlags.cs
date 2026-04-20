@@ -26,11 +26,11 @@ public static class SharedFlags
             switch (state)
             {
                 case State.Normal:
-                    if (token.AsFast.Equals((FastString)"-p"u8) || token.AsFast.Equals((FastString)"--project"u8))
+                    if (token.AsFast == "-p"u8 || token.AsFast == "--project"u8)
                     {
                         state = State.ExpectingProjectPath;
                     }
-                    else if (token.AsFast.Equals((FastString)"-f"u8) || token.AsFast.Equals((FastString)"--force"u8))
+                    else if (token.AsFast == "-f"u8 || token.AsFast == "--force"u8)
                     {
                         force = true;
                     }
@@ -72,7 +72,7 @@ public static class SharedFlags
     }
 
     private static bool IsHelpToken(Arg t)
-        => t.AsFast.Equals((FastString)"--help"u8) || t.AsFast.Equals((FastString)"-h"u8);
+        => t.AsFast == "--help"u8 || t.AsFast == "-h"u8;
 
     private static bool IsFlagToken(Arg t)
         => t.Data.Length > 0 && t.Data[0] == (byte)'-';

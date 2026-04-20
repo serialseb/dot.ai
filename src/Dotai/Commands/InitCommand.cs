@@ -26,7 +26,7 @@ public sealed class InitCommand
             ConsoleOut.Info(Help_u8);
             return 1;
         }
-        if (rest[0].AsFast.Equals((FastString)"--help"u8))
+        if (rest[0].AsFast == "--help"u8)
         {
             ConsoleOut.Info(Help_u8);
             return 0;
@@ -147,7 +147,7 @@ public sealed class InitCommand
     private static bool ContainsUrl(List<byte[]> config, FastString url)
     {
         foreach (var item in config)
-            if (url.Equals(new FastString(item))) return true;
+            if (url == new FastString(item)) return true;
         return false;
     }
 

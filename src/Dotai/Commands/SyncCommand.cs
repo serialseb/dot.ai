@@ -24,7 +24,7 @@ public sealed class SyncCommand
         var startDir = parsed.StartDir;
         var force = parsed.Force || Force;
 
-        if (rest.Length > 0 && rest[0].AsFast.Equals((FastString)"--help"u8))
+        if (rest.Length > 0 && rest[0].AsFast == "--help"u8)
         {
             ConsoleOut.Info(Help_u8);
             return 0;

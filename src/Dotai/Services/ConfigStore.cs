@@ -114,7 +114,7 @@ public static class ConfigStore
     private static bool ContainsBytes(List<byte[]> list, FastString candidate)
     {
         foreach (var item in list)
-            if (candidate.Equals(new FastString(item))) return true;
+            if (candidate == new FastString(item)) return true;
         return false;
     }
 

@@ -26,11 +26,11 @@ public static unsafe class Program
         var first = args[0].AsFast;
         var rest  = args[1..];
 
-        if (first.Equals("--help"u8) || first.Equals("-h"u8))
+        if (first == "--help"u8 || first == "-h"u8)
             return new HelpCommand().Execute(rest);
-        if (first.Equals("init"u8))
+        if (first == "init"u8)
             return new InitCommand().Execute(rest);
-        if (first.Equals("sync"u8))
+        if (first == "sync"u8)
             return new SyncCommand().Execute(rest);
 
         var buf = new ByteBuffer(32);
