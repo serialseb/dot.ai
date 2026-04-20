@@ -16,7 +16,7 @@ public static class SkillLinker
                 var targetDir = Path.Combine(repoRoot, agent, "skills");
                 Directory.CreateDirectory(targetDir);
                 var target = Path.Combine(targetDir, skillName);
-                EnsureSymlink(target, skillPath, report);
+                if (EnsureSymlink(target, skillPath, report)) report.SkillsLinked++;
             }
         }
     }
@@ -32,7 +32,7 @@ public static class SkillLinker
             var target = Path.Combine(repoRoot, rel);
             var parent = Path.GetDirectoryName(target);
             if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-            EnsureSymlink(target, filePath, report);
+            if (EnsureSymlink(target, filePath, report)) report.FilesLinked++;
         }
     }
 
@@ -77,7 +77,7 @@ public static class SkillLinker
         File.Delete(path);
     }
 
-    private static void EnsureSymlink(string target, string source, SyncReport report)
+    private static bool EnsureSymlink(string target, string source, SyncReport report)
     {
         var info = new FileInfo(target);
         if (info.Exists || Directory.Exists(target))
@@ -86,10 +86,10 @@ public static class SkillLinker
             if (existingLink == null)
             {
                 report.Conflicts.Add($"{target}: exists as real file/directory, not a symlink");
-                return;
+                return false;
             }
             if (string.Equals(Path.GetFullPath(existingLink), Path.GetFullPath(source),
-                StringComparison.Ordinal)) return;
+                StringComparison.Ordinal)) return false;
 
             var existingAbsolute = Path.IsPathRooted(existingLink)
                 ? existingLink
@@ -99,7 +99,7 @@ public static class SkillLinker
             {
                 report.Conflicts.Add(
                     $"{Path.GetFileName(target)} provided by {source} and {existingAbsolute}");
-                return;
+                return false;
             }
 
             File.Delete(target);
@@ -107,6 +107,7 @@ public static class SkillLinker
 
         if (Directory.Exists(source)) Directory.CreateSymbolicLink(target, source);
         else File.CreateSymbolicLink(target, source);
+        return true;
     }
 
     private static bool IsInDifferentClone(string a, string b)

@@ -29,9 +29,8 @@ public class SkillLinkerTests
         SkillLinker.LinkSkills(tmp.Path, clone, new[] { ".claude" }, report);
 
         var link = Path.Combine(tmp.Path, ".claude", "skills", "alpha");
-        var info = new FileInfo(link);
-        Assert.True(info.Exists);
-        Assert.NotNull(info.LinkTarget);
+        Assert.True(Directory.Exists(link));
+        Assert.NotNull(new FileInfo(link).LinkTarget);
     }
 
     [Fact]
@@ -109,5 +108,41 @@ public class SkillLinkerTests
         SkillLinker.CleanupOrphans(tmp.Path, new[] { ".claude" });
 
         Assert.True(new FileInfo(Path.Combine(agent, "user")).LinkTarget != null);
+    }
+
+    [Fact]
+    public void LinkSkillsCountsNewSymlinks()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+            Directory.CreateDirectory(Path.Combine(c, "skills", "beta"));
+        });
+        var report = new SyncReport();
+
+        SkillLinker.LinkSkills(tmp.Path, clone, new[] { ".claude" }, report);
+
+        Assert.Equal(2, report.SkillsLinked);
+    }
+
+    [Fact]
+    public void LinkFilesCountsNewSymlinks()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "1");
+            Directory.CreateDirectory(Path.Combine(files, "sub"));
+            File.WriteAllText(Path.Combine(files, "sub", "two.txt"), "2");
+        });
+        var report = new SyncReport();
+
+        SkillLinker.LinkFiles(tmp.Path, clone, report);
+
+        Assert.Equal(2, report.FilesLinked);
     }
 }
