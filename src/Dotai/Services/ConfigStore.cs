@@ -10,11 +10,15 @@ public static class ConfigStore
         AllowTrailingCommas = true,
     };
 
+    private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
+
     public static Dictionary<string, JsonElement> Load(string path)
     {
         if (!File.Exists(path)) return new Dictionary<string, JsonElement>();
         using var stream = File.OpenRead(path);
         using var doc = JsonDocument.Parse(stream, ReadOptions);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException($"Config file '{path}' must contain a JSON object at the root.");
         var result = new Dictionary<string, JsonElement>();
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
@@ -25,9 +29,7 @@ public static class ConfigStore
 
     public static void AddRepo(Dictionary<string, JsonElement> config, string uri)
     {
-        if (config.ContainsKey(uri)) return;
-        using var empty = JsonDocument.Parse("{}");
-        config[uri] = empty.RootElement.Clone();
+        config.TryAdd(uri, EmptyObject);
     }
 
     public static void Save(string path, Dictionary<string, JsonElement> config)

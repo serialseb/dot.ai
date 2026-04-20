@@ -66,6 +66,16 @@ public class ConfigStoreTests
     }
 
     [Fact]
+    public void LoadThrowsOnNonObjectRoot()
+    {
+        using var tmp = new TempDir();
+        var path = Path.Combine(tmp.Path, "config.jsonc");
+        File.WriteAllText(path, "[\"not an object\"]");
+
+        Assert.Throws<InvalidDataException>(() => ConfigStore.Load(path));
+    }
+
+    [Fact]
     public void SaveCreatesParentDirectories()
     {
         using var tmp = new TempDir();
