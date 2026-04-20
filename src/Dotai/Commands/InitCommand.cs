@@ -48,7 +48,7 @@ public sealed class InitCommand : ICommand
         var owner = parts[0];
         var repo = parts[1];
         var url = CloneUrlOverride ?? $"https://github.com/{owner}/{repo}";
-        var cloneName = $"{owner}_{repo}";
+        var cloneName = GitClient.DeriveCloneName(url);
 
         var aiDir = Path.Combine(repoRoot, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");

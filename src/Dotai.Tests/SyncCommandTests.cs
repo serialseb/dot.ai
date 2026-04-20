@@ -8,7 +8,7 @@ namespace Dotai.Tests;
 
 public class SyncCommandTests
 {
-    private static string MakeProject(string baseDir, string remoteUrl, string cloneKey)
+    private static string MakeProject(string baseDir, string remoteUrl)
     {
         var repo = Path.Combine(baseDir, "project");
         Directory.CreateDirectory(repo);
@@ -18,6 +18,7 @@ public class SyncCommandTests
         var aiDir = Path.Combine(repo, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");
         Directory.CreateDirectory(reposDir);
+        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
         GitClient.Clone(remoteUrl, Path.Combine(reposDir, cloneKey));
 
         var config = new Dictionary<string, JsonElement>();
@@ -50,7 +51,7 @@ public class SyncCommandTests
             Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
-        var project = MakeProject(tmp.Path, remoteUrl, "owner_repo");
+        var project = MakeProject(tmp.Path, remoteUrl);
         var cmd = new SyncCommand(project);
 
         var code = cmd.Execute(Array.Empty<string>());
@@ -71,15 +72,16 @@ public class SyncCommandTests
             Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
-        var project = MakeProject(tmp.Path, remoteUrl, "owner_repo");
-        var skillFile = Path.Combine(project, ".ai", "repositories", "owner_repo", "skills", "alpha", "SKILL.md");
+        var project = MakeProject(tmp.Path, remoteUrl);
+        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        var skillFile = Path.Combine(project, ".ai", "repositories", cloneKey, "skills", "alpha", "SKILL.md");
         File.WriteAllText(skillFile, "edited");
         var cmd = new SyncCommand(project);
 
         var code = cmd.Execute(Array.Empty<string>());
 
         Assert.Equal(0, code);
-        var log = GitClient.Run(Path.Combine(project, ".ai", "repositories", "owner_repo"),
+        var log = GitClient.Run(Path.Combine(project, ".ai", "repositories", cloneKey),
             "log", "--oneline");
         Assert.Contains("dotai sync", log.StdOut);
     }
@@ -90,8 +92,9 @@ public class SyncCommandTests
         using var tmp = new TempDir();
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
-        var project = MakeProject(tmp.Path, remoteUrl, "owner_repo");
-        Directory.CreateDirectory(Path.Combine(project, ".ai", "repositories", "owner_repo", ".git", "rebase-merge"));
+        var project = MakeProject(tmp.Path, remoteUrl);
+        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        Directory.CreateDirectory(Path.Combine(project, ".ai", "repositories", cloneKey, ".git", "rebase-merge"));
         var cmd = new SyncCommand(project);
 
         var code = cmd.Execute(Array.Empty<string>());

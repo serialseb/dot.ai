@@ -61,4 +61,18 @@ public static class GitClient
     public static bool RebaseInProgress(string workDir) =>
         Directory.Exists(Path.Combine(workDir, ".git", "rebase-merge"))
         || Directory.Exists(Path.Combine(workDir, ".git", "rebase-apply"));
+
+    /// <summary>
+    /// Derives a filesystem-safe clone directory name from a remote URL.
+    /// Both InitCommand and SyncCommand must use this method so the clone
+    /// directory name is always consistent regardless of how it was registered.
+    /// </summary>
+    public static string DeriveCloneName(string url)
+    {
+        var trimmed = url.TrimEnd('/');
+        if (trimmed.EndsWith(".git")) trimmed = trimmed[..^4];
+        var segs = trimmed.Split('/');
+        if (segs.Length < 2) return trimmed.Replace('/', '_');
+        return $"{segs[^2]}_{segs[^1]}";
+    }
 }

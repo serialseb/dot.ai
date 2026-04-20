@@ -65,7 +65,7 @@ public sealed class SyncCommand : ICommand
 
     private static void SyncOne(string repoRoot, string url, IReadOnlyList<string> agents, SyncReport report)
     {
-        var cloneName = DeriveCloneName(url);
+        var cloneName = GitClient.DeriveCloneName(url);
         var clone = Path.Combine(repoRoot, ".ai", "repositories", cloneName);
         if (!Directory.Exists(Path.Combine(clone, ".git")))
         {
@@ -121,12 +121,4 @@ public sealed class SyncCommand : ICommand
         ConsoleOut.Info($"  • {url}: {deltaSkills} skills, {deltaFiles} files");
     }
 
-    private static string DeriveCloneName(string url)
-    {
-        var trimmed = url.TrimEnd('/');
-        if (trimmed.EndsWith(".git")) trimmed = trimmed[..^4];
-        var segs = trimmed.Split('/');
-        if (segs.Length < 2) return trimmed.Replace('/', '_');
-        return $"{segs[^2]}_{segs[^1]}";
-    }
 }

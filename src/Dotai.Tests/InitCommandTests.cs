@@ -1,4 +1,5 @@
 using Dotai.Commands;
+using Dotai.Services;
 using Dotai.Tests.Fixtures;
 using Xunit;
 
@@ -56,7 +57,8 @@ public class InitCommandTests
         Assert.Equal(0, code);
         Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.jsonc")));
         Assert.True(File.Exists(Path.Combine(repo, ".ai", ".gitignore")));
-        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "owner_repo", ".git")));
+        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", cloneKey, ".git")));
         var link = Path.Combine(repo, ".claude", "skills", "alpha");
         Assert.True(Directory.Exists(link));
         Assert.NotNull(new FileInfo(link).LinkTarget);
