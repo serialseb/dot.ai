@@ -3,7 +3,7 @@ namespace Dotai.Services;
 public static class SkillLinker
 {
     public static void LinkSkills(
-        string repoRoot, string clone, IReadOnlyList<string> agents, SyncReport report)
+        string repoRoot, string clone, ReadOnlySpan<string> agents, SyncReport report)
     {
         var skillsDir = Path.Combine(clone, "skills");
         if (!Directory.Exists(skillsDir)) return;
@@ -36,7 +36,7 @@ public static class SkillLinker
         }
     }
 
-    public static void CleanupOrphans(string repoRoot, IReadOnlyList<string> agents)
+    public static void CleanupOrphans(string repoRoot, ReadOnlySpan<string> agents)
     {
         var ownedPrefix = Path.GetFullPath(Path.Combine(repoRoot, ".ai", "repositories"))
             + Path.DirectorySeparatorChar;
@@ -53,7 +53,7 @@ public static class SkillLinker
 
     }
 
-    public static void ForceReset(string repoRoot, IReadOnlyList<string> agents)
+    public static void ForceReset(string repoRoot, ReadOnlySpan<string> agents)
     {
         var ownedPrefix = Path.GetFullPath(Path.Combine(repoRoot, ".ai", "repositories"))
             + Path.DirectorySeparatorChar;

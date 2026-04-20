@@ -4,14 +4,18 @@ public static class AgentDetector
 {
     private static readonly string[] Known = { ".claude", ".codex", ".opencode" };
 
-    public static IReadOnlyList<string> Detect(string repoRoot)
+    public static string[] Detect(string repoRoot)
     {
-        var present = new List<string>();
+        var count = 0;
+        var present = new string[Known.Length];
         foreach (var name in Known)
         {
             if (Directory.Exists(Path.Combine(repoRoot, name)))
-                present.Add(name);
+                present[count++] = name;
         }
-        return present;
+        if (count == Known.Length) return present;
+        var trimmed = new string[count];
+        Array.Copy(present, trimmed, count);
+        return trimmed;
     }
 }

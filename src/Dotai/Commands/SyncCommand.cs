@@ -103,7 +103,7 @@ public sealed class SyncCommand : ICommand
         return 0;
     }
 
-    private static void SyncOne(string repoRoot, string url, IReadOnlyList<string> agents, SyncReport report)
+    private static void SyncOne(string repoRoot, string url, ReadOnlySpan<string> agents, SyncReport report)
     {
         var cloneName = GitClient.DeriveCloneName(url);
         var clone = Path.Combine(repoRoot, ".ai", "repositories", cloneName);
