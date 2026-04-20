@@ -1,6 +1,8 @@
+using System.Text;
 using Dotai.Commands;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
+using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
@@ -17,11 +19,13 @@ public class SyncCommandTests
         var aiDir = Path.Combine(repo, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");
         Directory.CreateDirectory(reposDir);
-        var cloneKey = cloneNameOverride ?? GitClient.DeriveCloneName(remoteUrl);
+        // PHASE3-TEMP: DeriveCloneName takes FastString; convert once at test boundary.
+        var cloneKey = cloneNameOverride
+            ?? Encoding.UTF8.GetString(GitClient.DeriveCloneName(Encoding.UTF8.GetBytes(remoteUrl)));
         GitClient.Clone(remoteUrl, Path.Combine(reposDir, cloneKey));
 
-        var config = new List<string>();
-        ConfigStore.AddRepo(config, remoteUrl);
+        var config = new List<byte[]>();
+        ConfigStore.AddRepo(config, (FastString)Encoding.UTF8.GetBytes(remoteUrl));
         ConfigStore.Save(Path.Combine(aiDir, "config.jsonc"), config);
 
         return repo;
@@ -72,7 +76,8 @@ public class SyncCommandTests
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
         var project = MakeProject(tmp.Path, remoteUrl);
-        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        // PHASE3-TEMP: DeriveCloneName takes FastString; convert once at test boundary.
+        var cloneKey = Encoding.UTF8.GetString(GitClient.DeriveCloneName(Encoding.UTF8.GetBytes(remoteUrl)));
         var skillFile = Path.Combine(project, ".ai", "repositories", cloneKey, "skills", "alpha", "SKILL.md");
         File.WriteAllText(skillFile, "edited");
         var cmd = new SyncCommand(project);
@@ -92,7 +97,8 @@ public class SyncCommandTests
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
         var project = MakeProject(tmp.Path, remoteUrl);
-        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        // PHASE3-TEMP: DeriveCloneName takes FastString; convert once at test boundary.
+        var cloneKey = Encoding.UTF8.GetString(GitClient.DeriveCloneName(Encoding.UTF8.GetBytes(remoteUrl)));
         Directory.CreateDirectory(Path.Combine(project, ".ai", "repositories", cloneKey, ".git", "rebase-merge"));
         var cmd = new SyncCommand(project);
 
@@ -107,7 +113,9 @@ public class SyncCommandTests
         using var tmp = new TempDir();
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
-        var project = MakeProject(tmp.Path, remoteUrl, GitClient.DeriveCloneName(remoteUrl));
+        // PHASE3-TEMP: DeriveCloneName takes FastString; convert once at test boundary.
+        var cloneNameOverride = Encoding.UTF8.GetString(GitClient.DeriveCloneName(Encoding.UTF8.GetBytes(remoteUrl)));
+        var project = MakeProject(tmp.Path, remoteUrl, cloneNameOverride);
         Directory.CreateDirectory(Path.Combine(project, ".skillshare"));
         var cmd = new SyncCommand(project);
 

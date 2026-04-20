@@ -1,5 +1,6 @@
 using System.Text;
 using Dotai.Services;
+using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
@@ -22,7 +23,7 @@ public sealed class InitCommand : ICommand
         try { parsed = SharedFlags.Parse(args, _startDir); }
         catch (ArgumentException ex)
         {
-            // TEMP(Phase3): ex.Message is a string; Phase 3 will propagate byte errors.
+            // TEMP(Phase3): ex.Message is a string; Phase 3c will propagate byte errors.
             ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
             return 1;
         }
@@ -46,7 +47,7 @@ public sealed class InitCommand : ICommand
         {
             var buf = new ByteBuffer(64);
             buf.Append("invalid argument: '"u8);
-            // TEMP(Phase3): arg is string; Phase 3 will propagate byte args.
+            // PHASE3-TEMP: arg is string from argv; Phase 3c will propagate byte args.
             buf.Append(Encoding.UTF8.GetBytes(arg));
             buf.Append("' (expected <owner>/<repo>)"u8);
             ConsoleOut.Error(buf.Span);
@@ -66,8 +67,32 @@ public sealed class InitCommand : ICommand
         var parts = arg.Split('/');
         var owner = parts[0];
         var repo = parts[1];
-        var url = CloneUrlOverride ?? $"https://github.com/{owner}/{repo}";
-        var cloneName = GitClient.DeriveCloneName(url);
+
+        // Compose the URL as bytes directly when possible; CloneUrlOverride is a TEMP string boundary.
+        byte[] urlBytes;
+        if (CloneUrlOverride != null)
+        {
+            // PHASE3-TEMP: CloneUrlOverride is a string override for tests; Phase 3c removes this path.
+            urlBytes = Encoding.UTF8.GetBytes(CloneUrlOverride);
+        }
+        else
+        {
+            // Compose "https://github.com/<owner>/<repo>" via ByteBuffer — no string interpolation.
+            // PHASE3-TEMP: owner/repo come from argv strings; Phase 3c will use byte args.
+            var ownerBytes = Encoding.UTF8.GetBytes(owner);
+            var repoBytes = Encoding.UTF8.GetBytes(repo);
+            var urlBuf = new ByteBuffer(32 + ownerBytes.Length + repoBytes.Length);
+            urlBuf.Append("https://github.com/"u8);
+            urlBuf.Append(ownerBytes);
+            urlBuf.AppendByte((byte)'/');
+            urlBuf.Append(repoBytes);
+            urlBytes = urlBuf.Span.ToArray();
+        }
+
+        FastString urlFast = urlBytes;
+        var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
+        // PHASE3-TEMP: path APIs still take string; Phase 3b will use libc.
+        var cloneName = Encoding.UTF8.GetString(cloneNameBytes);
 
         var aiDir = Path.Combine(repoRoot, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");
@@ -76,7 +101,7 @@ public sealed class InitCommand : ICommand
         GitignoreWriter.EnsureLine(Path.Combine(aiDir, ".gitignore"), "repositories/");
 
         var configPath = Path.Combine(aiDir, "config.jsonc");
-        List<string> config;
+        List<byte[]> config;
         try
         {
             config = ConfigStore.Load(configPath);
@@ -87,46 +112,45 @@ public sealed class InitCommand : ICommand
             {
                 var buf = new ByteBuffer(128);
                 buf.Append("config at "u8);
-                // TEMP(Phase3): configPath is string; Phase 3 will propagate byte paths.
+                // PHASE3-TEMP: configPath is string; Phase 3b will propagate byte paths.
                 buf.Append(Encoding.UTF8.GetBytes(configPath));
                 buf.Append(" is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost)."u8);
                 ConsoleOut.Error(buf.Span);
                 return 2;
             }
-            config = new List<string>();
+            config = new List<byte[]>();
             ConfigStore.Save(configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
-        var alreadyRegistered = config.Contains(url);
+
+        var alreadyRegistered = ContainsUrl(config, urlFast);
         if (alreadyRegistered)
         {
             var buf = new ByteBuffer(64);
             buf.Append("repository already registered: "u8);
-            // TEMP(Phase3): url is string; Phase 3 will propagate byte URLs.
-            buf.Append(Encoding.UTF8.GetBytes(url));
+            buf.Append(urlBytes);
             ConsoleOut.Hint(buf.Span);
         }
-        ConfigStore.AddRepo(config, url);
+        ConfigStore.AddRepo(config, urlFast);
         ConfigStore.Save(configPath, config);
 
         var cloneDir = Path.Combine(reposDir, cloneName);
         if (!Directory.Exists(Path.Combine(cloneDir, ".git")))
         {
-            var result = GitClient.Clone(url, cloneDir);
+            // PHASE3-TEMP: GitClient.Clone still takes string URL; Phase 3b will flip.
+            var result = GitClient.Clone(Encoding.UTF8.GetString(urlBytes), cloneDir);
             if (result.ExitCode != 0)
             {
                 var stderrTrimmed = ByteOps.Trim(result.StdErr);
                 var buf = new ByteBuffer(64);
                 buf.Append("git clone failed: "u8);
-                // TEMP(Phase3): stderr is already bytes — Trim returns span; decode only for message boundary.
                 buf.Append(stderrTrimmed);
                 ConsoleOut.Error(buf.Span);
                 return 2;
             }
             var clonedBuf = new ByteBuffer(64);
             clonedBuf.Append("cloned "u8);
-            // TEMP(Phase3): url is string; Phase 3 will propagate byte URLs.
-            clonedBuf.Append(Encoding.UTF8.GetBytes(url));
+            clonedBuf.Append(urlBytes);
             ConsoleOut.Info(clonedBuf.Span);
         }
 
@@ -141,8 +165,7 @@ public sealed class InitCommand : ICommand
             var files = report?.FilesLinked ?? 0;
             var buf = new ByteBuffer(128);
             buf.Append("registered "u8);
-            // TEMP(Phase3): url is string; Phase 3 will propagate byte URLs.
-            buf.Append(Encoding.UTF8.GetBytes(url));
+            buf.Append(urlBytes);
             buf.Append(": "u8);
             buf.AppendInt(skills);
             buf.Append(" skills, "u8);
@@ -151,6 +174,13 @@ public sealed class InitCommand : ICommand
             ConsoleOut.Success(buf.Span);
         }
         return syncCode;
+    }
+
+    private static bool ContainsUrl(List<byte[]> config, FastString url)
+    {
+        foreach (var item in config)
+            if (url.Equals(new FastString(item))) return true;
+        return false;
     }
 
     private static readonly byte[] Help_u8 =

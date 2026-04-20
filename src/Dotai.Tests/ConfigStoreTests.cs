@@ -1,11 +1,21 @@
+using System.Text;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
+using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class ConfigStoreTests
 {
+    private static bool ContainsUrl(List<byte[]> config, string url)
+    {
+        var target = Encoding.UTF8.GetBytes(url);
+        foreach (var item in config)
+            if (item.AsSpan().SequenceEqual(target)) return true;
+        return false;
+    }
+
     [Fact]
     public void LoadReturnsEmptyWhenFileMissing()
     {
@@ -24,20 +34,20 @@ public class ConfigStoreTests
         var path = Path.Combine(tmp.Path, "config.jsonc");
         var config = ConfigStore.Load(path);
 
-        ConfigStore.AddRepo(config, "https://github.com/foo/bar");
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
         ConfigStore.Save(path, config);
         var reloaded = ConfigStore.Load(path);
 
-        Assert.Contains("https://github.com/foo/bar", reloaded);
+        Assert.True(ContainsUrl(reloaded, "https://github.com/foo/bar"));
     }
 
     [Fact]
     public void AddRepoIsIdempotent()
     {
-        var config = new List<string>();
+        var config = new List<byte[]>();
 
-        ConfigStore.AddRepo(config, "https://github.com/foo/bar");
-        ConfigStore.AddRepo(config, "https://github.com/foo/bar");
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
 
         Assert.Single(config);
     }
@@ -45,10 +55,10 @@ public class ConfigStoreTests
     [Fact]
     public void AddRepoSupportsMultiple()
     {
-        var config = new List<string>();
+        var config = new List<byte[]>();
 
-        ConfigStore.AddRepo(config, "https://github.com/foo/bar");
-        ConfigStore.AddRepo(config, "https://github.com/baz/qux");
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/baz/qux"u8);
 
         Assert.Equal(2, config.Count);
     }
@@ -62,7 +72,7 @@ public class ConfigStoreTests
 
         var config = ConfigStore.Load(path);
 
-        Assert.Contains("https://github.com/foo/bar", config);
+        Assert.True(ContainsUrl(config, "https://github.com/foo/bar"));
     }
 
     [Fact]
@@ -80,8 +90,8 @@ public class ConfigStoreTests
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "a", "b", "config.jsonc");
-        var config = new List<string>();
-        ConfigStore.AddRepo(config, "https://github.com/foo/bar");
+        var config = new List<byte[]>();
+        ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
 
         ConfigStore.Save(path, config);
 

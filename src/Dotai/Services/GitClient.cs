@@ -1,4 +1,5 @@
 using System.Text;
+using Dotai.Text;
 
 namespace Dotai.Services;
 
@@ -74,12 +75,31 @@ public static class GitClient
     /// Both InitCommand and SyncCommand must use this method so the clone
     /// directory name is always consistent regardless of how it was registered.
     /// </summary>
-    public static string DeriveCloneName(string url)
+    public static byte[] DeriveCloneName(FastString url)
     {
-        var trimmed = url.TrimEnd('/');
-        if (trimmed.EndsWith(".git")) trimmed = trimmed[..^4];
-        var segs = trimmed.Split('/');
-        if (segs.Length < 2) return trimmed.Replace('/', '_');
-        return $"{segs[^2]}_{segs[^1]}";
+        var bytes = url.Bytes;
+        // Trim trailing slashes
+        while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
+        // Strip trailing .git (4 bytes)
+        if (bytes.EndsWith(".git"u8)) bytes = bytes[..^4];
+        // Find last two slash positions
+        int last = bytes.LastIndexOf((byte)'/');
+        if (last < 0)
+        {
+            // No slash: replace all slashes (none here) — return as-is with slashes as underscores
+            var copy = bytes.ToArray();
+            for (int i = 0; i < copy.Length; i++)
+                if (copy[i] == (byte)'/') copy[i] = (byte)'_';
+            return copy;
+        }
+        int secondLast = bytes[..last].LastIndexOf((byte)'/');
+        ReadOnlySpan<byte> seg1 = secondLast >= 0 ? bytes[(secondLast + 1)..last] : bytes[..last];
+        ReadOnlySpan<byte> seg2 = bytes[(last + 1)..];
+        // Join with '_'
+        var result = new byte[seg1.Length + 1 + seg2.Length];
+        seg1.CopyTo(result);
+        result[seg1.Length] = (byte)'_';
+        seg2.CopyTo(result.AsSpan(seg1.Length + 1));
+        return result;
     }
 }
