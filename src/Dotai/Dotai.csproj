@@ -41,6 +41,8 @@
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <IlcInstructionSet>apple-m1</IlcInstructionSet>
     <IlcExportUnmanagedEntryPoints>false</IlcExportUnmanagedEntryPoints>
+    <!-- PGO: reachability profile driven from sync-heavy workload -->
+    <_ReachabilityInstrumentationFile>$(MSBuildThisFileDirectory)dotai.reach.mprof</_ReachabilityInstrumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <DirectPInvoke Include="libc" />
