@@ -13,13 +13,12 @@ public static class GitignoreWriter
             return;
         }
 
-        var lines = File.ReadAllLines(path);
-        foreach (var existing in lines)
+        var text = File.ReadAllText(path);
+        foreach (var existing in text.Split('\n'))
         {
             if (existing.Trim() == line) return;
         }
 
-        var text = File.ReadAllText(path);
         if (text.Length > 0 && !text.EndsWith('\n')) text += Environment.NewLine;
         text += line + Environment.NewLine;
         File.WriteAllText(path, text);

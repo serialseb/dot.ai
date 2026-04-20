@@ -55,4 +55,19 @@ public class GitignoreWriterTests
 
         Assert.True(File.Exists(path));
     }
+
+    [Fact]
+    public void AppendsToFileWithoutFinalNewline()
+    {
+        using var tmp = new TempDir();
+        var path = Path.Combine(tmp.Path, ".gitignore");
+        File.WriteAllText(path, "node_modules/");
+
+        GitignoreWriter.EnsureLine(path, "repositories/");
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("node_modules/", text);
+        Assert.Contains("repositories/", text);
+        Assert.EndsWith(Environment.NewLine, text);
+    }
 }
