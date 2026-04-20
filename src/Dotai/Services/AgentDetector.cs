@@ -16,10 +16,10 @@ public static class AgentDetector
     {
         var count = 0;
         var present = new byte[Known.Length][];
-        foreach (var name in Known)
+        for (int i = 0; i < Known.Length; i++)
         {
-            if (Fs.IsDirectory(Fs.Combine(repoRoot, name)))
-                present[count++] = name;
+            if (Fs.IsDirectory(Fs.Combine(repoRoot, Known[i])))
+                present[count++] = Known[i];
         }
         if (count == Known.Length) return present;
         var trimmed = new byte[count][];

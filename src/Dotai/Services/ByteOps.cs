@@ -4,8 +4,8 @@ internal static class ByteOps
 {
     public static bool IsBlank(ReadOnlySpan<byte> s)
     {
-        foreach (var b in s)
-            if (b != (byte)' ' && b != (byte)'\t' && b != (byte)'\r' && b != (byte)'\n')
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] != (byte)' ' && s[i] != (byte)'\t' && s[i] != (byte)'\r' && s[i] != (byte)'\n')
                 return false;
         return true;
     }

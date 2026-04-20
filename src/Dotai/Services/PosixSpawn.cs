@@ -1,13 +1,17 @@
 using System.Runtime.InteropServices;
+using Dotai.Text;
+using Dotai.Ui;
 
 namespace Dotai.Services;
 
 // Thin wrapper around posix_spawnp that captures stdout and stderr.
 // macOS only (see Libc.cs for the portability note).
+// Uses temp files instead of pipes — no threads, no poll.
 internal static unsafe class PosixSpawn
 {
-    // executableNullTerminated must be a null-terminated UTF-8 byte array
-    // (e.g. "git\0"u8.ToArray() or NullTerminate(someBytes)).
+    private static int _counter;
+
+    // executableNullTerminated must be a null-terminated UTF-8 byte array.
     internal static (int exitCode, byte[] stdout, byte[] stderr) Run(
         byte[] executableNullTerminated, byte[][] argv)
     {
@@ -18,26 +22,30 @@ internal static unsafe class PosixSpawn
 
         var execBytes = executableNullTerminated;
 
-        var stdoutFds = stackalloc int[2];
-        var stderrFds = stackalloc int[2];
+        // Build two temp paths: /tmp/dotai-<pid>-<counter>.out/.err
+        var pid = Libc.Getpid();
+        var counter = _counter++;
+        var stdoutPath = BuildTempPath(pid, counter, ".out\0"u8);
+        var stderrPath = BuildTempPath(pid, counter, ".err\0"u8);
 
-        if (Libc.Pipe(stdoutFds) != 0) throw new InvalidOperationException("pipe() failed for stdout");
-        if (Libc.Pipe(stderrFds) != 0)
+        // File actions: open stdout and stderr temp files in child
+        if (Libc.FileActionsInit(out var actions) != 0)
         {
-            Libc.Close(stdoutFds[0]);
-            Libc.Close(stdoutFds[1]);
-            throw new InvalidOperationException("pipe() failed for stderr");
+            ConsoleOut.Error("posix_spawn_file_actions_init failed"u8);
+            return (-1, [], []);
         }
 
-        Libc.FileActionsInit(out var actions);
+        bool spawnOk = false;
+        int childPid = -1;
         try
         {
-            // dup2 the write ends into fd 1 (stdout) and fd 2 (stderr) in the child.
-            Libc.FileActionsAddDup2(ref actions, stdoutFds[1], 1);
-            Libc.FileActionsAddDup2(ref actions, stderrFds[1], 2);
-            // Close read ends in the child — the child should not inherit them.
-            Libc.FileActionsAddClose(ref actions, stdoutFds[0]);
-            Libc.FileActionsAddClose(ref actions, stderrFds[0]);
+            fixed (byte* outPath = stdoutPath)
+            fixed (byte* errPath = stderrPath)
+            {
+                int openFlags = Libc.O_WRONLY | Libc.O_CREAT | Libc.O_TRUNC;
+                Libc.FileActionsAddOpen(ref actions, 1, outPath, openFlags, 0x1A4 /* 0644 */);
+                Libc.FileActionsAddOpen(ref actions, 2, errPath, openFlags, 0x1A4 /* 0644 */);
+            }
 
             // Pin all argv byte arrays and build the argv pointer array.
             var handles = new GCHandle[argCount];
@@ -51,34 +59,20 @@ internal static unsafe class PosixSpawn
                 }
                 argPtrs[argCount] = null;
 
-                int pid;
                 fixed (byte* execPtr = execBytes)
                 fixed (byte** argvPtr = argPtrs)
                 {
-                    int ret = Libc.PosixSpawnp(out pid, execPtr, ref actions, IntPtr.Zero, argvPtr, null);
+                    int ret = Libc.PosixSpawnp(out childPid, execPtr, ref actions, IntPtr.Zero, argvPtr, null);
                     if (ret != 0)
-                        throw new InvalidOperationException($"posix_spawnp failed with errno {ret}");
+                    {
+                        var buf = new ByteBuffer(48);
+                        buf.Append("posix_spawnp failed errno "u8);
+                        buf.AppendInt(ret);
+                        ConsoleOut.Error(buf.Span);
+                        return (-1, [], []);
+                    }
+                    spawnOk = true;
                 }
-
-                // Close write ends in parent so we see EOF when child exits.
-                Libc.Close(stdoutFds[1]);
-                Libc.Close(stderrFds[1]);
-
-                // Read both pipes concurrently on background threads.
-                byte[] stdoutBytes = [];
-                byte[] stderrBytes = [];
-                var t1 = new Thread(() => stdoutBytes = DrainFd(stdoutFds[0])) { IsBackground = true };
-                var t2 = new Thread(() => stderrBytes = DrainFd(stderrFds[0])) { IsBackground = true };
-                t1.Start();
-                t2.Start();
-                t1.Join();
-                t2.Join();
-
-                Libc.Waitpid(pid, out var wstatus, 0);
-                // WEXITSTATUS: bits 8–15 of wstatus (WIFEXITED is assumed).
-                var exitCode = (wstatus >> 8) & 0xFF;
-
-                return (exitCode, stdoutBytes, stderrBytes);
             }
             finally
             {
@@ -90,18 +84,92 @@ internal static unsafe class PosixSpawn
         {
             Libc.FileActionsDestroy(ref actions);
         }
+
+        if (!spawnOk) return (-1, [], []);
+
+        // Wait for child to finish
+        Libc.Waitpid(childPid, out var wstatus, 0);
+        var exitCode = (wstatus >> 8) & 0xFF;
+
+        // Read temp files
+        FastString outFs = stdoutPath[..^1]; // strip null terminator for FastString
+        FastString errFs = stderrPath[..^1];
+        var stdoutBytes = TryReadAllBytes(outFs);
+        var stderrBytes = TryReadAllBytes(errFs);
+
+        // Clean up
+        TryDeleteFile(outFs);
+        TryDeleteFile(errFs);
+
+        return (exitCode, stdoutBytes, stderrBytes);
     }
 
-    private static byte[] DrainFd(int fd)
+    private static byte[] TryReadAllBytes(FastString path)
     {
-        var ms = new MemoryStream();
-        var buf = new byte[4096];
-        long n;
-        fixed (byte* p = buf)
-            while ((n = Libc.Read(fd, p, (nuint)buf.Length)) > 0)
-                ms.Write(buf, 0, (int)n);
-        Libc.Close(fd);
-        return ms.ToArray();
+        var buf = Fs.NullTerminate(path);
+        int fd;
+        fixed (byte* p = buf) fd = Libc.Open(p, Libc.O_RDONLY, 0);
+        if (fd < 0) return [];
+        try
+        {
+            var statbuf = stackalloc byte[Libc.StatBufSize];
+            if (Libc.FStat(fd, statbuf) != 0) return [];
+            var size = (int)BitConverter.ToInt64(new ReadOnlySpan<byte>(statbuf, Libc.StatBufSize).Slice(96, 8));
+            if (size == 0) return [];
+            var data = new byte[size];
+            fixed (byte* dp = data)
+            {
+                long total = 0;
+                while (total < size)
+                {
+                    var n = Libc.Read(fd, dp + total, (nuint)(size - total));
+                    if (n <= 0) break;
+                    total += n;
+                }
+                if (total < size) Array.Resize(ref data, (int)total);
+            }
+            return data;
+        }
+        finally { Libc.Close(fd); }
+    }
+
+    private static void TryDeleteFile(FastString path)
+    {
+        var buf = Fs.NullTerminate(path);
+        fixed (byte* p = buf) Libc.Unlink(p);
+    }
+
+    // Builds: /tmp/dotai-<pid>-<counter><suffix\0>
+    // suffix must be null-terminated (e.g. ".out\0"u8)
+    private static byte[] BuildTempPath(int pid, int counter, ReadOnlySpan<byte> suffix)
+    {
+        // prefix: "/tmp/dotai-"
+        ReadOnlySpan<byte> prefix = "/tmp/dotai-"u8;
+        // max digits for int: 10 digits + '-' + 10 digits = 21 chars, plus suffix
+        var buf = new byte[prefix.Length + 21 + suffix.Length];
+        int pos = 0;
+        prefix.CopyTo(buf);
+        pos += prefix.Length;
+        pos += WriteInt(buf, pos, pid);
+        buf[pos++] = (byte)'-';
+        pos += WriteInt(buf, pos, counter);
+        suffix.CopyTo(buf.AsSpan(pos));
+        pos += suffix.Length;
+        return buf[..pos];
+    }
+
+    private static int WriteInt(byte[] buf, int offset, int value)
+    {
+        if (value == 0) { buf[offset] = (byte)'0'; return 1; }
+        // Write digits in reverse
+        int start = offset;
+        int v = value < 0 ? -value : value;
+        int end = offset;
+        while (v > 0) { buf[end++] = (byte)('0' + v % 10); v /= 10; }
+        // Reverse
+        int lo = start, hi = end - 1;
+        while (lo < hi) { (buf[lo], buf[hi]) = (buf[hi], buf[lo]); lo++; hi--; }
+        return end - start;
     }
 
     // Appends a null byte to an already-UTF-8 byte array.
@@ -111,5 +179,4 @@ internal static unsafe class PosixSpawn
         s.CopyTo(buf, 0);
         return buf;
     }
-
 }

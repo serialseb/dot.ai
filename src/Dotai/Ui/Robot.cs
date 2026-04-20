@@ -1,3 +1,5 @@
+using Dotai.Services;
+
 namespace Dotai.Ui;
 
 public static class Robot
@@ -20,7 +22,11 @@ public static class Robot
     {
         if (!Stdio.IsTty(1)) return;
         Stdio.Write(1, Art);
-        Thread.Sleep(1000);
+        // nanosleep for 1 second (tv_sec=1, tv_nsec=0) via a 16-byte timespec on stack
+        Span<byte> ts = stackalloc byte[16];
+        BitConverter.TryWriteBytes(ts[..8], 1L);
+        BitConverter.TryWriteBytes(ts.Slice(8, 8), 0L);
+        unsafe { fixed (byte* p = ts) Libc.Nanosleep(p, null); }
         Stdio.Write(1, ClearScreen);
     }
 }

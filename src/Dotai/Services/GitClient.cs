@@ -40,7 +40,7 @@ public static class GitClient
     public static GitResult Clone(FastString url, FastString target)
     {
         var parent = Fs.GetDirectoryName(target);
-        if (parent.Length > 0) Fs.CreateDirectory(parent);
+        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
         // Clone uses the CWD (parent dir) as workDir, since target is absolute.
         var argv = new byte[][]
         {

@@ -21,8 +21,9 @@ public static class SharedFlags
         var force = false;
         var positional = new List<Arg>();
 
-        foreach (var token in args)
+        for (int ti = 0; ti < args.Length; ti++)
         {
+            var token = args[ti];
             switch (state)
             {
                 case State.Normal:

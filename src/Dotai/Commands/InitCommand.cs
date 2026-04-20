@@ -8,7 +8,8 @@ public sealed class InitCommand
 {
     private readonly byte[] _startDir;
 
-    public InitCommand() : this(Fs.GetCurrentDirectory()) { }
+    public InitCommand() : this(GetCwd()) { }
+    private static byte[] GetCwd() { Fs.TryGetCurrentDirectory(out var d); return d; }
     public InitCommand(byte[] startDir) { _startDir = startDir; }
 
     // TEST-SEAM: tests pass a pre-encoded byte[] URL override.
@@ -77,7 +78,7 @@ public sealed class InitCommand
 
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
         var reposDir = Fs.Combine(aiDir, "repositories"u8);
-        Fs.CreateDirectory(reposDir);
+        Fs.TryCreateDirectory(reposDir);
 
         GitignoreWriter.EnsureLine(
             (FastString)Fs.Combine(aiDir, ".gitignore"u8),
@@ -146,8 +147,8 @@ public sealed class InitCommand
 
     private static bool ContainsUrl(List<byte[]> config, FastString url)
     {
-        foreach (var item in config)
-            if (url == new FastString(item)) return true;
+        for (int i = 0; i < config.Count; i++)
+            if (url == new FastString(config[i])) return true;
         return false;
     }
 
@@ -159,8 +160,9 @@ public sealed class InitCommand
         if (data.Length == 0) return false;
         int slashCount = 0;
         int segmentLength = 0;
-        foreach (var b in data)
+        for (int i = 0; i < data.Length; i++)
         {
+            var b = data[i];
             if (b == (byte)'/')
             {
                 if (segmentLength == 0) return false;

@@ -25,15 +25,6 @@ internal static unsafe partial class Libc
     [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_destroy")]
     internal static partial int FileActionsDestroy(ref IntPtr actions);
 
-    [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_adddup2")]
-    internal static partial int FileActionsAddDup2(ref IntPtr actions, int fd, int newfd);
-
-    [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_addclose")]
-    internal static partial int FileActionsAddClose(ref IntPtr actions, int fd);
-
-    [LibraryImport("libc", EntryPoint = "pipe")]
-    internal static partial int Pipe(int* fds);
-
     [LibraryImport("libc", EntryPoint = "close")]
     internal static partial int Close(int fd);
 
@@ -45,6 +36,15 @@ internal static unsafe partial class Libc
 
     [LibraryImport("libc", EntryPoint = "write")]
     internal static partial long Write(int fd, byte* buf, nuint count);
+
+    [LibraryImport("libc", EntryPoint = "posix_spawn_file_actions_addopen")]
+    internal static partial int FileActionsAddOpen(ref IntPtr actions, int fd, byte* path, int oflag, int mode);
+
+    [LibraryImport("libc", EntryPoint = "getpid")]
+    internal static partial int Getpid();
+
+    [LibraryImport("libc", EntryPoint = "nanosleep")]
+    internal static partial int Nanosleep(byte* req, byte* rem);
 
     [LibraryImport("libc", EntryPoint = "isatty")]
     internal static partial int IsAtty(int fd);

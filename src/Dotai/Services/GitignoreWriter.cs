@@ -8,7 +8,7 @@ public static class GitignoreWriter
     public static void EnsureLine(FastString path, FastString line)
     {
         var parent = Fs.GetDirectoryName(path);
-        if (parent.Length > 0) Fs.CreateDirectory(parent);
+        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
 
         if (!Fs.Exists(path))
         {
@@ -16,11 +16,12 @@ public static class GitignoreWriter
             var buf = new byte[line.Length + 1];
             line.Bytes.CopyTo(buf);
             buf[line.Length] = (byte)'\n';
-            Fs.WriteAllBytes(path, buf);
+            Fs.TryWriteAllBytes(path, buf);
             return;
         }
 
-        var text = Fs.ReadAllBytes(path);
+        if (!Fs.TryReadAllBytes(path, out var text)) return;
+
         // Check each line for a match
         var textSpan = text.AsSpan();
         int start = 0;
@@ -45,8 +46,6 @@ public static class GitignoreWriter
         line.Bytes.CopyTo(appended.AsSpan(pos));
         pos += line.Length;
         appended[pos] = (byte)'\n';
-        Fs.WriteAllBytes(path, appended);
+        Fs.TryWriteAllBytes(path, appended);
     }
-
-
 }

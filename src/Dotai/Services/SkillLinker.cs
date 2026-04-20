@@ -11,13 +11,15 @@ public static class SkillLinker
         var skillsDir = Fs.Combine(clone, "skills"u8);
         if (!Fs.IsDirectory(skillsDir)) return;
 
-        foreach (var skillPath in Fs.EnumerateDirectories(skillsDir))
+        var skillPaths = (System.Collections.Generic.List<byte[]>)Fs.EnumerateDirectories(skillsDir);
+        for (int si = 0; si < skillPaths.Count; si++)
         {
+            var skillPath = skillPaths[si];
             var skillName = Fs.GetFileName(skillPath);
-            foreach (var agent in agents)
+            for (int ai = 0; ai < agents.Length; ai++)
             {
-                var targetDir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
-                Fs.CreateDirectory(targetDir);
+                var targetDir = Fs.Combine(Fs.Combine(repoRoot, agents[ai].AsFast), "skills"u8);
+                Fs.TryCreateDirectory(targetDir);
                 var target = Fs.Combine(targetDir, skillName);
                 if (EnsureSymlink(target, skillPath, report)) report.SkillsLinked++;
             }
@@ -29,12 +31,14 @@ public static class SkillLinker
         var filesDir = Fs.Combine(clone, "files"u8);
         if (!Fs.IsDirectory(filesDir)) return;
 
-        foreach (var filePath in Fs.EnumerateFiles(filesDir, recursive: true))
+        var filePaths = (System.Collections.Generic.List<byte[]>)Fs.EnumerateFiles(filesDir, recursive: true);
+        for (int i = 0; i < filePaths.Count; i++)
         {
+            var filePath = filePaths[i];
             var rel = Fs.GetRelativePath(filesDir, filePath);
             var target = Fs.Combine(repoRoot, rel);
             var parent = Fs.GetDirectoryName(target);
-            if (parent.Length > 0) Fs.CreateDirectory(parent);
+            if (parent.Length > 0) Fs.TryCreateDirectory(parent);
             if (EnsureSymlink(target, filePath, report)) report.FilesLinked++;
         }
     }
@@ -43,12 +47,13 @@ public static class SkillLinker
     {
         var ownedPrefix = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "repositories"u8);
 
-        foreach (var agent in agents)
+        for (int ai = 0; ai < agents.Length; ai++)
         {
-            var dir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
+            var dir = Fs.Combine(Fs.Combine(repoRoot, agents[ai].AsFast), "skills"u8);
             if (!Fs.IsDirectory(dir)) continue;
-            foreach (var entry in Fs.EnumerateFileSystemEntries(dir))
-                RemoveIfDanglingAndOwned(entry, ownedPrefix);
+            var entries = (System.Collections.Generic.List<byte[]>)Fs.EnumerateFileSystemEntries(dir);
+            for (int i = 0; i < entries.Count; i++)
+                RemoveIfDanglingAndOwned(entries[i], ownedPrefix);
         }
     }
 
@@ -56,12 +61,13 @@ public static class SkillLinker
     {
         var ownedPrefix = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "repositories"u8);
 
-        foreach (var agent in agents)
+        for (int ai = 0; ai < agents.Length; ai++)
         {
-            var dir = Fs.Combine(Fs.Combine(repoRoot, agent.AsFast), "skills"u8);
+            var dir = Fs.Combine(Fs.Combine(repoRoot, agents[ai].AsFast), "skills"u8);
             if (!Fs.IsDirectory(dir)) continue;
-            foreach (var entry in Fs.EnumerateFileSystemEntries(dir))
-                RemoveIfOwned(entry, ownedPrefix);
+            var entries = (System.Collections.Generic.List<byte[]>)Fs.EnumerateFileSystemEntries(dir);
+            for (int i = 0; i < entries.Count; i++)
+                RemoveIfOwned(entries[i], ownedPrefix);
         }
 
         RemoveOwnedFileSymlinksInTree(repoRoot.Bytes.ToArray(), ownedPrefix);
@@ -76,8 +82,10 @@ public static class SkillLinker
 
     private static void RemoveOwnedSymlinksRecursive(byte[] dir, byte[] aiDir, byte[] gitDir, byte[] ownedPrefix)
     {
-        foreach (var entry in Fs.EnumerateFileSystemEntries(dir))
+        var entries = (System.Collections.Generic.List<byte[]>)Fs.EnumerateFileSystemEntries(dir);
+        for (int i = 0; i < entries.Count; i++)
         {
+            var entry = entries[i];
             if (StartsWith(entry, aiDir) || StartsWith(entry, gitDir)) continue;
             if (Fs.IsSymlink(entry))
             {
@@ -98,7 +106,7 @@ public static class SkillLinker
             ? target
             : Fs.Combine(Fs.GetDirectoryName(path), target);
         if (!StartsWith(absolute, ownedPrefix)) return;
-        Fs.DeleteFile(path);
+        Fs.TryDeleteFile(path);
     }
 
     private static void RemoveIfDanglingAndOwned(byte[] path, byte[] ownedPrefix)
@@ -110,7 +118,7 @@ public static class SkillLinker
             : Fs.Combine(Fs.GetDirectoryName(path), target);
         if (!StartsWith(absolute, ownedPrefix)) return;
         if (Fs.Exists(absolute)) return;
-        Fs.DeleteFile(path);
+        Fs.TryDeleteFile(path);
     }
 
     private static bool EnsureSymlink(byte[] target, byte[] source, SyncReport report)
@@ -134,7 +142,6 @@ public static class SkillLinker
                 ? existingLinkTarget
                 : Fs.Combine(Fs.GetDirectoryName(target), existingLinkTarget);
 
-            // Already points at the right place?
             if (SamePath(existingAbsolute, Fs.GetFullPath(source))) return false;
 
             if (IsInDifferentClone(source, existingAbsolute))
@@ -150,10 +157,10 @@ public static class SkillLinker
                 return false;
             }
 
-            Fs.DeleteFile(target);
+            Fs.TryDeleteFile(target);
         }
 
-        Fs.CreateSymbolicLink(target, source);
+        Fs.TryCreateSymbolicLink(target, source);
         return true;
     }
 
@@ -161,7 +168,6 @@ public static class SkillLinker
     {
         var fa = Fs.GetFullPath(a);
         var fb = Fs.GetFullPath(b);
-        // marker: /.ai/repositories/
         var marker = "/.ai/repositories/"u8;
         int ia = IndexOf(fa, marker);
         int ib = IndexOf(fb, marker);

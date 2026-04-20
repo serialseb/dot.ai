@@ -21,7 +21,11 @@ public static class ConfigStore
             return true;
         }
 
-        var bytes = Fs.ReadAllBytes(path);
+        if (!Fs.TryReadAllBytes(path, out var bytes))
+        {
+            config = new List<byte[]>();
+            return false;
+        }
         var reader = new Utf8JsonReader(bytes, ReadOptions);
 
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
@@ -47,11 +51,12 @@ public static class ConfigStore
             {
                 var seq = reader.ValueSequence;
                 keyBytes = new byte[(int)seq.Length];
-                int pos = 0;
-                foreach (var segment in seq)
+                int seqPos = 0;
+                var seqSegs = seq.GetEnumerator();
+                while (seqSegs.MoveNext())
                 {
-                    segment.Span.CopyTo(keyBytes.AsSpan(pos));
-                    pos += segment.Length;
+                    seqSegs.Current.Span.CopyTo(keyBytes.AsSpan(seqPos));
+                    seqPos += seqSegs.Current.Length;
                 }
             }
             else
@@ -84,22 +89,22 @@ public static class ConfigStore
     public static void Save(FastString path, List<byte[]> config)
     {
         var parent = Fs.GetDirectoryName(path);
-        if (parent.Length > 0) Fs.CreateDirectory(parent);
+        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
 
         using var stream = new MemoryStream();
         var writerOptions = new JsonWriterOptions { Indented = true };
         using (var writer = new Utf8JsonWriter(stream, writerOptions))
         {
             writer.WriteStartObject();
-            foreach (var urlBytes in config)
+            for (int i = 0; i < config.Count; i++)
             {
-                writer.WritePropertyName(urlBytes.AsSpan());
+                writer.WritePropertyName(config[i].AsSpan());
                 writer.WriteStartObject();
                 writer.WriteEndObject();
             }
             writer.WriteEndObject();
         }
-        Fs.WriteAllBytes(path, stream.ToArray());
+        Fs.TryWriteAllBytes(path, stream.ToArray());
     }
 
     private static void EmitMalformedError(FastString path)
@@ -113,8 +118,8 @@ public static class ConfigStore
 
     private static bool ContainsBytes(List<byte[]> list, FastString candidate)
     {
-        foreach (var item in list)
-            if (candidate == new FastString(item)) return true;
+        for (int i = 0; i < list.Count; i++)
+            if (candidate == new FastString(list[i])) return true;
         return false;
     }
 

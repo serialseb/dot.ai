@@ -1,9 +1,11 @@
 using Dotai.Text;
+using Dotai.Ui;
 
 namespace Dotai.Services;
 
 // libc-backed filesystem helpers. All paths are null-terminated UTF-8 byte buffers.
 // macOS only (see Libc.cs for the portability note).
+// All mutating operations return bool; on failure they emit ConsoleOut.Error and return false.
 public static unsafe class Fs
 {
     // ── existence / type ────────────────────────────────────────────────────
@@ -40,19 +42,28 @@ public static unsafe class Fs
 
     // ── read / write ────────────────────────────────────────────────────────
 
-    public static byte[] ReadAllBytes(FastString path)
+    public static bool TryReadAllBytes(FastString path, out byte[] bytes)
     {
         var buf = NullTerminate(path);
         int fd;
         fixed (byte* p = buf) fd = Libc.Open(p, Libc.O_RDONLY, 0);
-        if (fd < 0) throw new IOException($"open failed: errno {Libc.Errno()}");
+        if (fd < 0)
+        {
+            EmitError("open failed: "u8, path);
+            bytes = [];
+            return false;
+        }
         try
         {
             var statbuf = stackalloc byte[Libc.StatBufSize];
-            if (Libc.FStat(fd, statbuf) != 0) throw new IOException($"fstat failed: errno {Libc.Errno()}");
-            // st_size is at offset 96 on macOS (int64)
+            if (Libc.FStat(fd, statbuf) != 0)
+            {
+                EmitError("fstat failed: "u8, path);
+                bytes = [];
+                return false;
+            }
             var size = (int)BitConverter.ToInt64(new ReadOnlySpan<byte>(statbuf, Libc.StatBufSize).Slice(96, 8));
-            if (size == 0) return [];
+            if (size == 0) { bytes = []; return true; }
             var data = new byte[size];
             fixed (byte* dp = data)
             {
@@ -65,19 +76,22 @@ public static unsafe class Fs
                 }
                 if (total < size) Array.Resize(ref data, (int)total);
             }
-            return data;
+            bytes = data;
+            return true;
         }
         finally { Libc.Close(fd); }
     }
 
-    public static void WriteAllBytes(FastString path, ReadOnlySpan<byte> data)
+    public static bool TryWriteAllBytes(FastString path, ReadOnlySpan<byte> data)
     {
-        // Use creat(2) instead of open(O_WRONLY|O_CREAT|O_TRUNC, mode) to avoid
-        // Apple ARM64 ABI issues with open's variadic mode parameter.
         var pathBuf = NullTerminate(path);
         int fd;
         fixed (byte* p = pathBuf) fd = Libc.Creat(p, 0x1A4 /* 0644 */);
-        if (fd < 0) throw new IOException($"creat failed: errno {Libc.Errno()}");
+        if (fd < 0)
+        {
+            EmitError("creat failed: "u8, path);
+            return false;
+        }
         try
         {
             fixed (byte* dp = data)
@@ -86,24 +100,26 @@ public static unsafe class Fs
                 while (total < data.Length)
                 {
                     var n = Libc.Write(fd, dp + total, (nuint)(data.Length - total));
-                    if (n <= 0) throw new IOException($"write failed: errno {Libc.Errno()}");
+                    if (n <= 0)
+                    {
+                        EmitError("write failed: "u8, path);
+                        return false;
+                    }
                     total += n;
                 }
             }
+            return true;
         }
         finally { Libc.Close(fd); }
     }
 
     // ── directory creation ───────────────────────────────────────────────────
 
-    public static void CreateDirectory(FastString path)
+    public static bool TryCreateDirectory(FastString path)
     {
-        // Walk each prefix segment and mkdir, ignoring EEXIST (17 on macOS).
         var bytes = path.Bytes;
-        // buf is the full path; we null-terminate at each segment boundary temporarily.
         var buf = new byte[bytes.Length + 1];
         bytes.CopyTo(buf);
-        // buf[bytes.Length] is already 0 (zero-initialised)
 
         for (int i = 1; i <= bytes.Length; i++)
         {
@@ -111,32 +127,38 @@ public static unsafe class Fs
             bool isSep  = !isLeaf && bytes[i] == (byte)'/';
             if (!isLeaf && !isSep) continue;
 
-            // Null-terminate at i (already 0 if isLeaf)
             var saved = buf[i];
             buf[i] = 0;
             fixed (byte* p = buf)
             {
                 var r = Libc.Mkdir(p, 0x1ED /* 0755 */);
                 if (r != 0 && Libc.Errno() != 17 /* EEXIST */ && isLeaf)
-                    throw new IOException($"mkdir failed: errno {Libc.Errno()}");
+                {
+                    EmitError("mkdir failed: "u8, path);
+                    return false;
+                }
             }
             buf[i] = saved;
         }
+        return true;
     }
 
     // ── symlinks ─────────────────────────────────────────────────────────────
 
-    public static void CreateSymbolicLink(FastString link, FastString target)
+    public static bool TryCreateSymbolicLink(FastString link, FastString target)
     {
-        // libc symlink(target, linkpath)
         var targetBuf = NullTerminate(target);
         var linkBuf = NullTerminate(link);
         fixed (byte* t = targetBuf)
         fixed (byte* l = linkBuf)
         {
             if (Libc.Symlink(t, l) != 0)
-                throw new IOException($"symlink failed: errno {Libc.Errno()}");
+            {
+                EmitError("symlink failed: "u8, link);
+                return false;
+            }
         }
+        return true;
     }
 
     public static byte[]? ReadSymbolicLinkTarget(FastString link)
@@ -162,32 +184,47 @@ public static unsafe class Fs
 
     // ── delete ───────────────────────────────────────────────────────────────
 
-    public static void DeleteFile(FastString path)
+    public static bool TryDeleteFile(FastString path)
     {
         var buf = NullTerminate(path);
         int ret;
         fixed (byte* p = buf) ret = Libc.Unlink(p);
-        if (ret != 0) throw new IOException($"unlink failed: errno {Libc.Errno()}");
+        if (ret != 0)
+        {
+            EmitError("unlink failed: "u8, path);
+            return false;
+        }
+        return true;
     }
 
     // ── path manipulation ────────────────────────────────────────────────────
 
-    public static byte[] GetCurrentDirectory()
+    public static bool TryGetCurrentDirectory(out byte[] cwd)
     {
         var buf = new byte[4096];
         fixed (byte* p = buf)
         {
             var ptr = Libc.Getcwd(p, (nuint)buf.Length);
-            if (ptr == IntPtr.Zero) throw new IOException("getcwd failed");
-            return SliceToNull(buf);
+            if (ptr == IntPtr.Zero)
+            {
+                ConsoleOut.Error("getcwd failed"u8);
+                cwd = [];
+                return false;
+            }
+            cwd = SliceToNull(buf);
+            return true;
         }
     }
 
     public static byte[] GetFullPath(FastString path)
     {
-        if (path.IsEmpty) return GetCurrentDirectory();
+        if (path.IsEmpty)
+        {
+            TryGetCurrentDirectory(out var cwd2);
+            return cwd2;
+        }
         if (path.Bytes[0] == (byte)'/') return NormalizePath(path.Bytes);
-        var cwd = GetCurrentDirectory();
+        TryGetCurrentDirectory(out var cwd);
         var combined = Combine(cwd, path);
         return NormalizePath(combined);
     }
@@ -277,32 +314,27 @@ public static unsafe class Fs
 
         if (fb.SequenceEqual(tb)) return "."u8.ToArray();
 
-        // Find the length of the common path prefix (at segment boundaries)
         int commonLen = 0;
         int minLen = Math.Min(fb.Length, tb.Length);
         for (int i = 0; i < minLen; i++)
         {
             if (fb[i] != tb[i]) break;
-            if (fb[i] == (byte)'/') commonLen = i; // update after each slash
+            if (fb[i] == (byte)'/') commonLen = i;
         }
-        // If one is a prefix of the other, update commonLen
         if (minLen > 0 && minLen <= fb.Length && minLen <= tb.Length)
         {
-            // If we matched all of the shorter one and the next char in longer is '/'
             if (fb.Length == minLen && tb.Length > minLen && tb[minLen] == (byte)'/') commonLen = minLen;
             else if (tb.Length == minLen && fb.Length > minLen && fb[minLen] == (byte)'/') commonLen = minLen;
         }
 
-        // Tail of 'from' after the common prefix (segments we need to go up)
-        // If commonLen == 0 and paths share no prefix, fromTail = all of fb
         ReadOnlySpan<byte> fromTail = commonLen == 0 ? fb
             : (commonLen < fb.Length ? fb[(commonLen + 1)..] : ReadOnlySpan<byte>.Empty);
         int hops = 0;
         if (!fromTail.IsEmpty)
         {
             hops = 1;
-            foreach (var b in fromTail)
-                if (b == (byte)'/') hops++;
+            for (int i = 0; i < fromTail.Length; i++)
+                if (fromTail[i] == (byte)'/') hops++;
         }
 
         ReadOnlySpan<byte> toTail = commonLen == 0 ? tb
@@ -329,8 +361,9 @@ public static unsafe class Fs
         var files = CollectEntries(path.Bytes.ToArray(), Libc.DT_REG);
         if (!recursive) return files;
         var all = new List<byte[]>(files);
-        foreach (var dir in CollectEntries(path.Bytes.ToArray(), Libc.DT_DIR))
-            all.AddRange(EnumerateFiles(dir, recursive: true));
+        var dirs = CollectEntries(path.Bytes.ToArray(), Libc.DT_DIR);
+        for (int i = 0; i < dirs.Count; i++)
+            all.AddRange(EnumerateFiles(dirs[i], recursive: true));
         return all;
     }
 
@@ -359,8 +392,6 @@ public static unsafe class Fs
                     var dirent = Libc.Readdir(dirp);
                     if (dirent == IntPtr.Zero) break;
 
-                    // macOS dirent (_DARWIN_USE_64_BIT_INODE):
-                    // d_ino(8) d_seekoff(8) d_reclen(2) d_namlen(2) d_type(1) d_name[...]
                     var namlen  = *(ushort*)((byte*)dirent + Libc.DirentNamlenOff);
                     var dtype   = *((byte*)dirent + Libc.DirentTypeOff);
                     var namePtr = (byte*)dirent + Libc.DirentNameOff;
@@ -386,7 +417,7 @@ public static unsafe class Fs
         var bytes = path.Bytes;
         var buf = new byte[bytes.Length + 1];
         bytes.CopyTo(buf);
-        return buf; // buf[Length] is 0 (array is zero-initialised)
+        return buf;
     }
 
     private static byte[] SliceToNull(byte[] buf)
@@ -394,5 +425,13 @@ public static unsafe class Fs
         int len = 0;
         while (len < buf.Length && buf[len] != 0) len++;
         return buf[..len];
+    }
+
+    private static void EmitError(ReadOnlySpan<byte> prefix, FastString path)
+    {
+        var b = new ByteBuffer(prefix.Length + path.Bytes.Length);
+        b.Append(prefix);
+        b.Append(path.Bytes);
+        ConsoleOut.Error(b.Span);
     }
 }

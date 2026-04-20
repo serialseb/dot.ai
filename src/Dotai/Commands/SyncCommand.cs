@@ -8,7 +8,8 @@ public sealed class SyncCommand
 {
     private readonly byte[] _startDir;
 
-    public SyncCommand() : this(Fs.GetCurrentDirectory()) { }
+    public SyncCommand() : this(GetCwd()) { }
+    private static byte[] GetCwd() { Fs.TryGetCurrentDirectory(out var d); return d; }
     public SyncCommand(byte[] startDir) { _startDir = startDir; }
 
     public bool Silent { get; init; }
@@ -67,9 +68,9 @@ public sealed class SyncCommand
 
         var report = new SyncReport();
 
-        foreach (var urlBytes in config)
+        for (int i = 0; i < config.Count; i++)
         {
-            SyncOne(repoRoot, urlBytes, agentArgs, report);
+            SyncOne(repoRoot, config[i], agentArgs, report);
         }
 
         LastReport = report;
@@ -77,15 +78,17 @@ public sealed class SyncCommand
         if (!report.Ok)
         {
             ConsoleOut.Warn("completed with issues:"u8);
-            foreach (var r in report.ManualRepos)
+            for (int i = 0; i < report.ManualRepos.Count; i++)
             {
+                var r = report.ManualRepos[i];
                 var buf = new ByteBuffer(r.Length + 16);
                 buf.Append("  \xe2\x80\xa2 manual: "u8);
                 buf.Append(r);
                 ConsoleOut.Detail(buf.Span);
             }
-            foreach (var c in report.Conflicts)
+            for (int i = 0; i < report.Conflicts.Count; i++)
             {
+                var c = report.Conflicts[i];
                 var buf = new ByteBuffer(c.Length + 18);
                 buf.Append("  \xe2\x80\xa2 conflict: "u8);
                 buf.Append(c);
