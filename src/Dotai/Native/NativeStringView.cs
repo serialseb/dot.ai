@@ -37,19 +37,23 @@ public readonly ref struct NativeStringView
     public static bool operator ==(NativeStringView a, ReadOnlySpan<byte> b) => a.Bytes.SequenceEqual(b);
     public static bool operator !=(NativeStringView a, ReadOnlySpan<byte> b) => !a.Bytes.SequenceEqual(b);
 
-    public NativeStringView GetDefaultBranchFromSymbolicRef()
-    {
-        var line = Trim();
-        for (int i = line.Length - 1; i >= 0; i--)
-            if (line[i] == (byte)'/') return line.Slice(i + 1);
-        return line;
-    }
-
     public int IndexOf(NativeStringView needle)
     {
         for (int i = 0; i <= Bytes.Length - needle.Length; i++)
             if (Bytes.Slice(i, needle.Length).SequenceEqual(needle.Bytes)) return i;
         return -1;
     }
+
+    public bool Contains(byte b) => IndexOf(b) >= 0;
+    public bool Contains(NativeStringView needle) => IndexOf(needle) >= 0;
+
+    public int LastIndexOf(NativeStringView needle)
+    {
+        for (int i = Bytes.Length - needle.Length; i >= 0; i--)
+            if (Bytes.Slice(i, needle.Length).SequenceEqual(needle.Bytes)) return i;
+        return -1;
+    }
+
+    public NativeStringView Take(int length) => new(Bytes[..length]);
 }
 #pragma warning restore CS0660, CS0661

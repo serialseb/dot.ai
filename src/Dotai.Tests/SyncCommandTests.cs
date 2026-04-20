@@ -21,7 +21,11 @@ public class SyncCommandTests
     private static NativeList<NativeString> EmptyArgs()
         => new NativeList<NativeString>(1);
 
-    private static string MakeProject(string baseDir, string remoteUrl, string? cloneNameOverride = null)
+    /// <summary>
+    /// Creates a project with a cloned remote and a config.toml using
+    /// ownerRepo ("owner/repo") as the registered name.
+    /// </summary>
+    private static string MakeProject(string baseDir, string remoteUrl, string ownerRepo, string? cloneNameOverride = null)
     {
         var repo = Path.Combine(baseDir, "project");
         Directory.CreateDirectory(repo);
@@ -31,14 +35,16 @@ public class SyncCommandTests
         var aiDir = Path.Combine(repo, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");
         Directory.CreateDirectory(reposDir);
-        var cloneNameNs = GitClient.DeriveCloneName(V(remoteUrl));
+
+        // Derive clone key from owner/repo (replaces '/' with '_')
+        var cloneNameNs = GitClient.DeriveCloneName(V(ownerRepo));
         var cloneKey = cloneNameOverride ?? Encoding.UTF8.GetString(cloneNameNs.AsView().Bytes);
         cloneNameNs.Dispose();
         GitClient.Clone(V(remoteUrl), V(Path.Combine(reposDir, cloneKey))).Dispose();
 
-        var config = new NativeList<NativeString>(4);
-        ConfigStore.AddRepo(ref config, V(remoteUrl));
-        ConfigStore.Save(V(Path.Combine(aiDir, "config.jsonc")), config);
+        var config = new NativeList<RepoConfig>(4);
+        ConfigStore.AddRepo(ref config, V(ownerRepo), "merge"u8);
+        ConfigStore.Save(V(Path.Combine(aiDir, "config.toml")), config.AsView());
         for (int i = 0; i < config.Length; i++) config[i].Dispose();
         config.Dispose();
 
@@ -70,7 +76,7 @@ public class SyncCommandTests
             Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
-        var project = MakeProject(tmp.Path, remoteUrl);
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
         var cmd = new SyncCommand(V(project));
         var emptyArgs = EmptyArgs();
 
@@ -93,10 +99,9 @@ public class SyncCommandTests
             Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
-        var project = MakeProject(tmp.Path, remoteUrl);
-        var cloneKeyNs = GitClient.DeriveCloneName(V(remoteUrl));
-        var cloneKey = Encoding.UTF8.GetString(cloneKeyNs.AsView().Bytes);
-        cloneKeyNs.Dispose();
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
+        // Clone key is owner_repo
+        var cloneKey = "owner_repo";
         var skillFile = Path.Combine(project, ".ai", "repositories", cloneKey, "skills", "alpha", "SKILL.md");
         File.WriteAllText(skillFile, "edited");
         var cmd = new SyncCommand(V(project));
@@ -118,10 +123,8 @@ public class SyncCommandTests
         using var tmp = new TempDir();
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
-        var project = MakeProject(tmp.Path, remoteUrl);
-        var cloneKeyNs = GitClient.DeriveCloneName(V(remoteUrl));
-        var cloneKey = Encoding.UTF8.GetString(cloneKeyNs.AsView().Bytes);
-        cloneKeyNs.Dispose();
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
+        var cloneKey = "owner_repo";
         Directory.CreateDirectory(Path.Combine(project, ".ai", "repositories", cloneKey, ".git", "rebase-merge"));
         var cmd = new SyncCommand(V(project));
         var emptyArgs = EmptyArgs();
@@ -138,10 +141,7 @@ public class SyncCommandTests
         using var tmp = new TempDir();
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
-        var cloneKeyNs = GitClient.DeriveCloneName(V(remoteUrl));
-        var cloneNameOverride = Encoding.UTF8.GetString(cloneKeyNs.AsView().Bytes);
-        cloneKeyNs.Dispose();
-        var project = MakeProject(tmp.Path, remoteUrl, cloneNameOverride);
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
         Directory.CreateDirectory(Path.Combine(project, ".skillshare"));
         var cmd = new SyncCommand(V(project));
         var emptyArgs = EmptyArgs();
@@ -161,7 +161,7 @@ public class SyncCommandTests
         LocalGitRepo.Run(repo, "init", "--initial-branch=main");
         var aiDir = Path.Combine(repo, ".ai");
         Directory.CreateDirectory(aiDir);
-        File.WriteAllText(Path.Combine(aiDir, "config.jsonc"), "[\"not an object\"]");
+        File.WriteAllText(Path.Combine(aiDir, "config.toml"), "[unclosed section\nmode = \"merge\"\n");
         var cmd = new SyncCommand(V(repo));
         var emptyArgs = EmptyArgs();
 
@@ -180,7 +180,7 @@ public class SyncCommandTests
         LocalGitRepo.Run(repo, "init", "--initial-branch=main");
         var aiDir = Path.Combine(repo, ".ai");
         Directory.CreateDirectory(aiDir);
-        File.WriteAllText(Path.Combine(aiDir, "config.jsonc"), "[\"not an object\"]");
+        File.WriteAllText(Path.Combine(aiDir, "config.toml"), "[unclosed section\nmode = \"merge\"\n");
         var cmd = new SyncCommand(V(repo));
         var forceArgs = Args("--force");
 

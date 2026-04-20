@@ -62,7 +62,7 @@ public sealed class SyncCommand
         skillshareCheck.Dispose();
 
         var aiDir = Fs.Combine(repoRoot.AsView(), ".ai"u8);
-        var configPath = Fs.Combine(aiDir.AsView(), "config.jsonc"u8);
+        var configPath = Fs.Combine(aiDir.AsView(), "config.toml"u8);
         aiDir.Dispose();
         if (!ConfigStore.TryLoad(configPath.AsView(), out var config))
         {
@@ -71,8 +71,8 @@ public sealed class SyncCommand
                 configPath.Dispose(); repoRoot.Dispose();
                 return 2;
             }
-            config = new NativeList<NativeString>(4);
-            ConfigStore.Save(configPath.AsView(), config);
+            config = new NativeList<RepoConfig>(4);
+            ConfigStore.Save(configPath.AsView(), config.AsView());
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
         configPath.Dispose();
@@ -98,7 +98,7 @@ public sealed class SyncCommand
 
         for (int i = 0; i < config.Length; i++)
         {
-            SyncOne(repoRoot.AsView(), config[i].AsView(), agentNames.AsView(), ref report);
+            SyncOne(repoRoot.AsView(), config[i], agentNames.AsView(), ref report);
         }
 
         for (int i = 0; i < config.Length; i++) config[i].Dispose();
@@ -157,10 +157,19 @@ public sealed class SyncCommand
     private static ReadOnlySpan<byte> Help_u8 =>
         "dotai sync [standard flags] — sync all configured source repositories."u8;
 
-    private static void SyncOne(NativeStringView repoRoot, NativeStringView urlView,
+    private static void SyncOne(NativeStringView repoRoot, in RepoConfig entry,
         NativeListView<NativeString> agents, ref SyncReport report)
     {
-        var cloneName = GitClient.DeriveCloneName(urlView);
+        var nameView = entry.Name.AsView();
+
+        // Build URL: https://github.com/<name>
+        var urlBuf = new NativeBuffer(32 + nameView.Length);
+        urlBuf.Append("https://github.com/"u8);
+        urlBuf.Append(nameView);
+        var urlNs = urlBuf.Freeze();
+
+        // Clone dir: .ai/repositories/<owner>_<repo>
+        var cloneName = GitClient.DeriveCloneName(nameView);
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
         var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
         aiDir.Dispose();
@@ -175,7 +184,7 @@ public sealed class SyncCommand
             msg.Append(clone.AsView());
             msg.Append(" (not cloned)"u8);
             report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose();
+            clone.Dispose(); urlNs.Dispose();
             return;
         }
         cloneDotGit.Dispose();
@@ -186,7 +195,7 @@ public sealed class SyncCommand
             msg.Append(clone.AsView());
             msg.Append(" (rebase in progress)"u8);
             report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose();
+            clone.Dispose(); urlNs.Dispose();
             return;
         }
 
@@ -204,7 +213,7 @@ public sealed class SyncCommand
                 msg.Append(clone.AsView());
                 msg.Append(" (commit failed)"u8);
                 report.ManualRepos.Add(msg.Freeze());
-                clone.Dispose();
+                clone.Dispose(); urlNs.Dispose();
                 return;
             }
             commitResult.Dispose();
@@ -219,7 +228,7 @@ public sealed class SyncCommand
             msg.Append(clone.AsView());
             msg.Append(" (fetch failed)"u8);
             report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose();
+            clone.Dispose(); urlNs.Dispose();
             return;
         }
         fetchResult.Dispose();
@@ -241,7 +250,7 @@ public sealed class SyncCommand
             msg.Append(clone.AsView());
             msg.Append(" (rebase failed; resolve in .git/rebase-merge)"u8);
             report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose();
+            clone.Dispose(); urlNs.Dispose();
             return;
         }
         rebase.Dispose();
@@ -258,7 +267,7 @@ public sealed class SyncCommand
             msg.AppendByte((byte)')');
             push.Dispose();
             report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose();
+            clone.Dispose(); urlNs.Dispose();
             return;
         }
         push.Dispose();
@@ -273,7 +282,7 @@ public sealed class SyncCommand
 
         var msgBuf = new NativeBuffer(64);
         msgBuf.Append("  \xe2\x80\xa2 "u8);
-        msgBuf.Append(urlView);
+        msgBuf.Append(nameView);
         msgBuf.Append(": "u8);
         msgBuf.AppendInt(deltaSkills);
         msgBuf.Append(" skills, "u8);
@@ -282,5 +291,6 @@ public sealed class SyncCommand
         ConsoleOut.Info(msgBuf.AsView());
         msgBuf.Dispose();
         clone.Dispose();
+        urlNs.Dispose();
     }
 }

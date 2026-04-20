@@ -19,7 +19,7 @@ public static class HelpCommand
               -p, --project <path>   run as if invoked from <path> (default: current directory)
               -f, --force            reset dotai-owned symlinks and overwrite malformed config
 
-            config is kept in .ai/config.jsonc at the git repo root.
+            config is kept in .ai/config.toml at the git repo root.
             """u8);
         return 0;
     }

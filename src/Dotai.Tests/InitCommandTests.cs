@@ -75,12 +75,10 @@ public class InitCommandTests
         args.Dispose();
 
         Assert.Equal(0, code);
-        Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.jsonc")));
+        Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.toml")));
         Assert.True(File.Exists(Path.Combine(repo, ".ai", ".gitignore")));
-        var cloneKeyNs = GitClient.DeriveCloneName(V(remoteUrl));
-        var cloneKey = Encoding.UTF8.GetString(cloneKeyNs.AsView().Bytes);
-        cloneKeyNs.Dispose();
-        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", cloneKey, ".git")));
+        // Clone name is derived from owner/repo → owner_repo
+        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "owner_repo", ".git")));
         var link = Path.Combine(repo, ".claude", "skills", "alpha");
         Assert.True(Directory.Exists(link));
         Assert.NotNull(new FileInfo(link).LinkTarget);
@@ -107,6 +105,6 @@ public class InitCommandTests
         args.Dispose();
 
         Assert.Equal(0, code);
-        Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.jsonc")));
+        Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.toml")));
     }
 }

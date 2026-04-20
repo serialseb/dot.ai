@@ -113,7 +113,9 @@ public static unsafe class GitClient
             r.Dispose();
             return NativeString.From("main"u8);
         }
-        var branch = NativeString.From(r.StdOut.AsView().GetDefaultBranchFromSymbolicRef());
+        var line = r.StdOut.AsView().Trim();
+        int slash = line.LastIndexOf((byte)'/');
+        var branch = NativeString.From(slash >= 0 ? line.Slice(slash + 1) : line);
         r.Dispose();
         return branch;
     }

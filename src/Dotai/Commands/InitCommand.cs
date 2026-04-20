@@ -66,11 +66,7 @@ public sealed class InitCommand
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
         skillshareCheck.Dispose();
 
-        // Split <owner>/<repo> on '/'
-        int slash = arg.IndexOf((byte)'/');
-        var ownerBytes = arg.Slice(0, slash);
-        var repoBytes = arg.Slice(slash + 1);
-
+        // Build clone URL: https://github.com/<owner>/<repo>
         NativeString urlNs;
         if (!CloneUrlOverride.IsEmpty)
         {
@@ -78,15 +74,14 @@ public sealed class InitCommand
         }
         else
         {
-            var urlBuf = new NativeBuffer(32 + ownerBytes.Length + repoBytes.Length);
+            var urlBuf = new NativeBuffer(32 + arg.Length);
             urlBuf.Append("https://github.com/"u8);
-            urlBuf.Append(ownerBytes);
-            urlBuf.AppendByte((byte)'/');
-            urlBuf.Append(repoBytes);
+            urlBuf.Append(arg);
             urlNs = urlBuf.Freeze();
         }
 
-        var cloneName = GitClient.DeriveCloneName(urlNs.AsView());
+        // Derive clone dir name from owner/repo (replaces '/' with '_')
+        var cloneName = GitClient.DeriveCloneName(arg);
 
         var aiDir = Fs.Combine(repoRoot.AsView(), ".ai"u8);
         var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
@@ -96,7 +91,7 @@ public sealed class InitCommand
         GitignoreWriter.EnsureLine(gitignorePath.AsView(), "repositories/"u8);
         gitignorePath.Dispose();
 
-        var configPath = Fs.Combine(aiDir.AsView(), "config.jsonc"u8);
+        var configPath = Fs.Combine(aiDir.AsView(), "config.toml"u8);
         if (!ConfigStore.TryLoad(configPath.AsView(), out var config))
         {
             if (!parsed.Force)
@@ -105,22 +100,22 @@ public sealed class InitCommand
                 configPath.Dispose(); repoRoot.Dispose(); parsed.Dispose();
                 return 2;
             }
-            config = new NativeList<NativeString>(4);
-            ConfigStore.Save(configPath.AsView(), config);
+            config = new NativeList<RepoConfig>(4);
+            ConfigStore.Save(configPath.AsView(), config.AsView());
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
 
-        var alreadyRegistered = ContainsUrl(config, urlNs.AsView());
+        var alreadyRegistered = ConfigStore.Contains(config.AsView(), arg);
         if (alreadyRegistered)
         {
             var buf = new NativeBuffer(64);
             buf.Append("repository already registered: "u8);
-            buf.Append(urlNs.AsView());
+            buf.Append(arg);
             ConsoleOut.Hint(buf.AsView());
             buf.Dispose();
         }
-        ConfigStore.AddRepo(ref config, urlNs.AsView());
-        ConfigStore.Save(configPath.AsView(), config);
+        ConfigStore.AddRepo(ref config, arg, "merge"u8);
+        ConfigStore.Save(configPath.AsView(), config.AsView());
         configPath.Dispose();
         for (int i = 0; i < config.Length; i++) config[i].Dispose();
         config.Dispose();
@@ -180,13 +175,6 @@ public sealed class InitCommand
         repoRoot.Dispose();
         parsed.Dispose();
         return syncCode;
-    }
-
-    private static bool ContainsUrl(NativeList<NativeString> config, NativeStringView url)
-    {
-        for (int i = 0; i < config.Length; i++)
-            if (config[i].AsView() == url) return true;
-        return false;
     }
 
     private static ReadOnlySpan<byte> Help_u8 =>

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Dotai.Native;
 using Dotai.Ui;
 
@@ -6,137 +5,49 @@ namespace Dotai.Services;
 
 public static class ConfigStore
 {
-    private static readonly JsonReaderOptions ReadOptions = new()
+    public static bool TryLoad(NativeStringView path, out NativeList<RepoConfig> config)
     {
-        CommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
-    public static bool TryLoad(NativeStringView path, out NativeList<NativeString> config)
-    {
-        if (!Fs.Exists(path))
+        if (!Fs.TryReadAllBytes(path, out var fileBytes))
         {
-            config = new NativeList<NativeString>(4);
-            return true;
+            config = new NativeList<RepoConfig>(4);
+            return true; // missing → empty
         }
 
-        if (!Fs.TryReadAllBytes(path, out var bytes))
+        if (!TomlConfig.TryParse(fileBytes.AsView(), out config))
         {
-            config = new NativeList<NativeString>(0);
+            fileBytes.Dispose();
             return false;
         }
 
-        var result = new NativeList<NativeString>(4);
-        var reader = new Utf8JsonReader(bytes.AsView().Bytes, ReadOptions);
-
-        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-        {
-            EmitMalformedError(path);
-            bytes.Dispose();
-            config = new NativeList<NativeString>(0);
-            return false;
-        }
-
-        while (reader.Read())
-        {
-            if (reader.TokenType == JsonTokenType.EndObject) break;
-            if (reader.TokenType != JsonTokenType.PropertyName)
-            {
-                EmitMalformedError(path);
-                bytes.Dispose();
-                for (int i = 0; i < result.Length; i++) result[i].Dispose();
-                result.Dispose();
-                config = new NativeList<NativeString>(0);
-                return false;
-            }
-
-            NativeString keyNs;
-            if (reader.HasValueSequence)
-            {
-                var seq = reader.ValueSequence;
-                var keyBuf = new NativeBuffer((int)seq.Length);
-                var seqEnum = seq.GetEnumerator();
-                while (seqEnum.MoveNext())
-                    keyBuf.Append(new NativeStringView(seqEnum.Current.Span));
-                keyNs = keyBuf.Freeze();
-            }
-            else
-            {
-                keyNs = NativeString.From(new NativeStringView(reader.ValueSpan));
-            }
-
-            if (!reader.Read())
-            {
-                EmitMalformedError(path);
-                keyNs.Dispose();
-                bytes.Dispose();
-                for (int i = 0; i < result.Length; i++) result[i].Dispose();
-                result.Dispose();
-                config = new NativeList<NativeString>(0);
-                return false;
-            }
-
-            SkipValue(ref reader);
-            result.Add(keyNs);
-        }
-
-        bytes.Dispose();
-        config = result;
+        fileBytes.Dispose();
         return true;
     }
 
-    public static void AddRepo(ref NativeList<NativeString> config, NativeStringView uri)
-    {
-        for (int i = 0; i < config.Length; i++)
-            if (config[i].AsView() == uri) return;
-        config.Add(NativeString.From(uri));
-    }
-
-    public static void Save(NativeStringView path, NativeList<NativeString> config)
+    public static void Save(NativeStringView path, NativeListView<RepoConfig> config)
     {
         var parent = Fs.GetDirectoryName(path);
         if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
         parent.Dispose();
 
-        using var stream = new MemoryStream();
-        var writerOptions = new JsonWriterOptions { Indented = true };
-        using (var writer = new Utf8JsonWriter(stream, writerOptions))
-        {
-            writer.WriteStartObject();
-            for (int i = 0; i < config.Length; i++)
-            {
-                writer.WritePropertyName(config[i].AsView().Bytes);
-                writer.WriteStartObject();
-                writer.WriteEndObject();
-            }
-            writer.WriteEndObject();
-        }
-        Fs.TryWriteAllBytes(path, new NativeStringView(stream.ToArray()));
-    }
-
-    private static void EmitMalformedError(NativeStringView path)
-    {
-        var buf = new NativeBuffer(path.Length + 64);
-        buf.Append("config at "u8);
-        buf.Append(path);
-        buf.Append(" is malformed. Fix it, or rerun with --force."u8);
-        ConsoleOut.Error(buf.AsView());
+        var buf = new NativeBuffer(256);
+        TomlConfig.Write(config, ref buf);
+        if (!Fs.TryWriteAllBytes(path, buf.AsView()))
+            Fatal.Die("cannot write config"u8);
         buf.Dispose();
     }
 
-    private static void SkipValue(ref Utf8JsonReader reader)
+    public static bool Contains(NativeListView<RepoConfig> config, NativeStringView name)
+        => TomlConfig.Contains(config, name);
+
+    public static void AddRepo(ref NativeList<RepoConfig> config, NativeStringView name, NativeStringView mode)
     {
-        switch (reader.TokenType)
+        for (int i = 0; i < config.Length; i++)
+            if (config[i].Name.AsView() == name) return;
+        var entry = new RepoConfig
         {
-            case JsonTokenType.StartObject:
-            case JsonTokenType.StartArray:
-                var depth = 1;
-                while (depth > 0 && reader.Read())
-                {
-                    if (reader.TokenType == JsonTokenType.StartObject || reader.TokenType == JsonTokenType.StartArray) depth++;
-                    else if (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray) depth--;
-                }
-                break;
-        }
+            Name = NativeString.From(name),
+            Mode = NativeString.From(mode)
+        };
+        config.Add(entry);
     }
 }
