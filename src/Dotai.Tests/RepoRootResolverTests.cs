@@ -41,6 +41,15 @@ public class RepoRootResolverTests
     }
 
     [Fact]
+    public void ReturnsNullForNonExistentDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "dotai-tests-" + Guid.NewGuid().ToString("N"));
+        // deliberately NOT created
+        var root = RepoRootResolver.Find(path);
+        Assert.Null(root);
+    }
+
+    [Fact]
     public void TreatsDotGitFileAsRoot()
     {
         using var tmp = new TempDir();

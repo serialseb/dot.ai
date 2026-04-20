@@ -4,6 +4,7 @@ public static class RepoRootResolver
 {
     public static string? Find(string startDir)
     {
+        if (!Directory.Exists(startDir)) return null;
         var dir = Path.GetFullPath(startDir);
         while (!string.IsNullOrEmpty(dir))
         {
