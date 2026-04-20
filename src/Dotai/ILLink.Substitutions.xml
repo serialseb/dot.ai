@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<linker>
+  <assembly fullname="System.Private.CoreLib">
+    <!-- UTF-8 ↔ UTF-16 transcoding: we never convert between the two -->
+    <type fullname="System.Text.Unicode.Utf8Utility">
+      <method name="TranscodeToUtf16" body="stub" />
+      <method name="TranscodeToUtf8" body="stub" />
+      <method name="GetPointerToFirstInvalidByte" body="stub" />
+    </type>
+
+    <!-- String formatting infra we never hit -->
+    <type fullname="System.Text.ValueStringBuilder">
+      <method name="AppendFormatHelper" body="stub" />
+    </type>
+
+    <!-- Number formatting slow paths (full IL names including enclosing method prefix) -->
+    <type fullname="System.Number">
+      <method name="&lt;FormatUInt64&gt;g__FormatUInt64Slow|27_0" body="stub" />
+      <method name="&lt;TryFormatInt64&gt;g__TryFormatInt64Slow|26_0" body="stub" />
+      <method name="&lt;TryFormatUInt64&gt;g__TryFormatUInt64Slow|28_0" body="stub" />
+      <method name="&lt;TryFormatInt32&gt;g__TryFormatInt32Slow|22_0" body="stub" />
+      <method name="&lt;FormatUInt32&gt;g__FormatUInt32Slow|23_0" body="stub" />
+      <method name="&lt;TryFormatUInt32&gt;g__TryFormatUInt32Slow|24_0" body="stub" />
+      <method name="&lt;FormatInt64&gt;g__FormatInt64Slow|25_0" body="stub" />
+      <method name="&lt;FormatInt32&gt;g__FormatInt32Slow|21_0" body="stub" />
+    </type>
+
+    <!-- Reflection assembly name formatting we never trigger -->
+    <type fullname="System.Reflection.AssemblyNameFormatter">
+      <method name="AppendDisplayName" body="stub" />
+    </type>
+
+    <!-- Internal hashing we don't use -->
+    <type fullname="System.Sha1ForNonSecretPurposes">
+      <method name="Drain" body="stub" />
+    </type>
+  </assembly>
+</linker>

@@ -45,4 +45,7 @@
   <ItemGroup>
     <DirectPInvoke Include="libc" />
   </ItemGroup>
+  <ItemGroup>
+    <IlcArg Include="--substitution:$(MSBuildThisFileDirectory)ILLink.Substitutions.xml" />
+  </ItemGroup>
 </Project>
