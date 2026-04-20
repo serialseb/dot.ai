@@ -9,7 +9,7 @@ public sealed class SyncCommand : ICommand
 {
     private readonly string _startDir;
 
-    public SyncCommand() : this(Directory.GetCurrentDirectory()) { }
+    public SyncCommand() : this(Encoding.UTF8.GetString(Fs.GetCurrentDirectory())) { }
     public SyncCommand(string startDir) { _startDir = startDir; }
 
     public bool Silent { get; init; }
@@ -41,21 +41,21 @@ public sealed class SyncCommand : ICommand
             return 0;
         }
 
-        var repoRoot = RepoRootResolver.Find(startDir);
-        if (repoRoot == null)
+        var startDirBytes = Encoding.UTF8.GetBytes(startDir);
+        if (!RepoRootResolver.TryFind(startDirBytes, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
         }
 
-        if (Directory.Exists(Path.Combine(repoRoot, ".skillshare")))
+        if (Fs.IsDirectory(Fs.Combine(repoRoot, ".skillshare"u8)))
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
 
-        var configPath = Path.Combine(repoRoot, ".ai", "config.jsonc");
+        var configPath = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "config.jsonc"u8);
         List<byte[]> config;
         try
         {
-            config = ConfigStore.Load(configPath);
+            config = ConfigStore.Load((FastString)configPath);
         }
         catch (InvalidDataException)
         {
@@ -63,14 +63,13 @@ public sealed class SyncCommand : ICommand
             {
                 var buf = new ByteBuffer(128);
                 buf.Append("config at "u8);
-                // PHASE3-TEMP: configPath is string; Phase 3b will propagate byte paths.
-                buf.Append(Encoding.UTF8.GetBytes(configPath));
+                buf.Append(configPath);
                 buf.Append(" is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost)."u8);
                 ConsoleOut.Error(buf.Span);
                 return 2;
             }
             config = new List<byte[]>();
-            ConfigStore.Save(configPath, config);
+            ConfigStore.Save((FastString)configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
 
@@ -80,11 +79,15 @@ public sealed class SyncCommand : ICommand
             return 1;
         }
 
-        var agents = AgentDetector.Detect(repoRoot);
+        var agentNames = AgentDetector.Detect((FastString)repoRoot);
+        // PHASE3-TEMP: SkillLinker still takes string[]; Phase 3c will flip.
+        var agentStrings = new string[agentNames.Length];
+        for (int i = 0; i < agentNames.Length; i++)
+            agentStrings[i] = Encoding.UTF8.GetString(agentNames[i]);
 
         if (force)
         {
-            SkillLinker.ForceReset(repoRoot, agents);
+            SkillLinker.ForceReset(Encoding.UTF8.GetString(repoRoot), agentStrings);
             ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost."u8);
         }
 
@@ -92,7 +95,7 @@ public sealed class SyncCommand : ICommand
 
         foreach (var urlBytes in config)
         {
-            SyncOne(repoRoot, urlBytes, agents, report);
+            SyncOne(repoRoot, urlBytes, agentStrings, report);
         }
 
         LastReport = report;
@@ -140,71 +143,71 @@ public sealed class SyncCommand : ICommand
     private static readonly byte[] Help_u8 =
         "dotai sync [standard flags] — sync all configured source repositories."u8.ToArray();
 
-    private static void SyncOne(string repoRoot, byte[] urlBytes, ReadOnlySpan<string> agents, SyncReport report)
+    private static void SyncOne(byte[] repoRoot, byte[] urlBytes, ReadOnlySpan<string> agents, SyncReport report)
     {
         FastString urlFast = urlBytes;
         var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
-        // PHASE3-TEMP: path APIs still take string; Phase 3b will use libc.
         var cloneName = Encoding.UTF8.GetString(cloneNameBytes);
-        var clone = Path.Combine(repoRoot, ".ai", "repositories", cloneName);
-        if (!Directory.Exists(Path.Combine(clone, ".git")))
+        var clone = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), Fs.Combine("repositories"u8, cloneNameBytes));
+        var cloneStr = Encoding.UTF8.GetString(clone);
+
+        if (!Fs.IsDirectory(Fs.Combine(clone, ".git"u8)))
         {
-            report.ManualRepos.Add($"{clone} (not cloned)");
+            report.ManualRepos.Add($"{cloneStr} (not cloned)");
             return;
         }
 
-        if (GitClient.RebaseInProgress(clone))
+        if (GitClient.RebaseInProgress(cloneStr))
         {
-            report.ManualRepos.Add($"{clone} (rebase in progress)");
+            report.ManualRepos.Add($"{cloneStr} (rebase in progress)");
             return;
         }
 
-        var status = GitClient.StatusPorcelain(clone);
+        var status = GitClient.StatusPorcelain(cloneStr);
         if (!ByteOps.IsBlank(status.StdOut))
         {
-            if (GitClient.AddAll(clone).ExitCode != 0
-                || GitClient.Commit(clone, "dotai sync").ExitCode != 0)
+            if (GitClient.AddAll(cloneStr).ExitCode != 0
+                || GitClient.Commit(cloneStr, "dotai sync").ExitCode != 0)
             {
-                report.ManualRepos.Add($"{clone} (commit failed)");
+                report.ManualRepos.Add($"{cloneStr} (commit failed)");
                 return;
             }
         }
 
-        if (GitClient.Fetch(clone).ExitCode != 0)
+        if (GitClient.Fetch(cloneStr).ExitCode != 0)
         {
-            report.ManualRepos.Add($"{clone} (fetch failed)");
+            report.ManualRepos.Add($"{cloneStr} (fetch failed)");
             return;
         }
 
-        var branchBytes = GitClient.DefaultBranch(clone);
+        var branchBytes = GitClient.DefaultBranch(cloneStr);
 
-        // Compose "origin/<branch>" via ByteBuffer — no string encoding needed.
         var upstream = new ByteBuffer(32);
         upstream.Append("origin/"u8);
         upstream.Append(branchBytes);
-        // PHASE3-TEMP: Rebase still takes string upstream; Phase 3b will flip the signature.
-        var rebase = GitClient.Rebase(clone, Encoding.UTF8.GetString(upstream.Span));
+        // PHASE3-TEMP: Rebase still takes string upstream; Phase 3c will flip the signature.
+        var rebase = GitClient.Rebase(cloneStr, Encoding.UTF8.GetString(upstream.Span));
         if (rebase.ExitCode != 0)
         {
-            report.ManualRepos.Add($"{clone} (rebase failed; resolve in .git/rebase-merge)");
+            report.ManualRepos.Add($"{cloneStr} (rebase failed; resolve in .git/rebase-merge)");
             return;
         }
 
-        // PHASE3-TEMP: Push still takes string branch; Phase 3b will flip the signature.
-        var push = GitClient.Push(clone, Encoding.UTF8.GetString(branchBytes));
+        // PHASE3-TEMP: Push still takes string branch; Phase 3c will flip the signature.
+        var push = GitClient.Push(cloneStr, Encoding.UTF8.GetString(branchBytes));
         if (push.ExitCode != 0)
         {
             var stderrTrimmed = ByteOps.Trim(push.StdErr);
-            // TEMP(Phase3c): push error message still stored as string for ManualRepos list.
-            report.ManualRepos.Add($"{clone} (push failed: {Encoding.UTF8.GetString(stderrTrimmed)})");
+            report.ManualRepos.Add($"{cloneStr} (push failed: {Encoding.UTF8.GetString(stderrTrimmed)})");
             return;
         }
 
+        var repoRootStr = Encoding.UTF8.GetString(repoRoot);
         var skillsBefore = report.SkillsLinked;
         var filesBefore = report.FilesLinked;
-        SkillLinker.LinkSkills(repoRoot, clone, agents, report);
-        SkillLinker.LinkFiles(repoRoot, clone, report);
-        SkillLinker.CleanupOrphans(repoRoot, agents);
+        SkillLinker.LinkSkills(repoRootStr, cloneStr, agents, report);
+        SkillLinker.LinkFiles(repoRootStr, cloneStr, report);
+        SkillLinker.CleanupOrphans(repoRootStr, agents);
         var deltaSkills = report.SkillsLinked - skillsBefore;
         var deltaFiles = report.FilesLinked - filesBefore;
 

@@ -9,7 +9,7 @@ public sealed class InitCommand : ICommand
 {
     private readonly string _startDir;
 
-    public InitCommand() : this(Directory.GetCurrentDirectory()) { }
+    public InitCommand() : this(Encoding.UTF8.GetString(Fs.GetCurrentDirectory())) { }
     public InitCommand(string startDir) { _startDir = startDir; }
 
     public string? CloneUrlOverride { get; init; }
@@ -23,7 +23,7 @@ public sealed class InitCommand : ICommand
         try { parsed = SharedFlags.Parse(args, _startDir); }
         catch (ArgumentException ex)
         {
-            // TEMP(Phase3): ex.Message is a string; Phase 3c will propagate byte errors.
+            // TEMP(Phase3c): ex.Message is a string; Phase 3c will propagate byte errors.
             ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
             return 1;
         }
@@ -54,14 +54,14 @@ public sealed class InitCommand : ICommand
             return 1;
         }
 
-        var repoRoot = RepoRootResolver.Find(startDir);
-        if (repoRoot == null)
+        var startDirBytes = Encoding.UTF8.GetBytes(startDir);
+        if (!RepoRootResolver.TryFind(startDirBytes, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
         }
 
-        if (Directory.Exists(Path.Combine(repoRoot, ".skillshare")))
+        if (Fs.IsDirectory(Fs.Combine(repoRoot, ".skillshare"u8)))
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
 
         var parts = arg.Split('/');
@@ -91,20 +91,21 @@ public sealed class InitCommand : ICommand
 
         FastString urlFast = urlBytes;
         var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
-        // PHASE3-TEMP: path APIs still take string; Phase 3b will use libc.
         var cloneName = Encoding.UTF8.GetString(cloneNameBytes);
 
-        var aiDir = Path.Combine(repoRoot, ".ai");
-        var reposDir = Path.Combine(aiDir, "repositories");
-        Directory.CreateDirectory(reposDir);
+        var aiDir = Fs.Combine(repoRoot, ".ai"u8);
+        var reposDir = Fs.Combine(aiDir, "repositories"u8);
+        Fs.CreateDirectory(reposDir);
 
-        GitignoreWriter.EnsureLine(Path.Combine(aiDir, ".gitignore"), "repositories/");
+        GitignoreWriter.EnsureLine(
+            (FastString)Fs.Combine(aiDir, ".gitignore"u8),
+            "repositories/"u8);
 
-        var configPath = Path.Combine(aiDir, "config.jsonc");
+        var configPath = Fs.Combine(aiDir, "config.jsonc"u8);
         List<byte[]> config;
         try
         {
-            config = ConfigStore.Load(configPath);
+            config = ConfigStore.Load((FastString)configPath);
         }
         catch (InvalidDataException)
         {
@@ -112,14 +113,13 @@ public sealed class InitCommand : ICommand
             {
                 var buf = new ByteBuffer(128);
                 buf.Append("config at "u8);
-                // PHASE3-TEMP: configPath is string; Phase 3b will propagate byte paths.
-                buf.Append(Encoding.UTF8.GetBytes(configPath));
+                buf.Append(configPath);
                 buf.Append(" is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost)."u8);
                 ConsoleOut.Error(buf.Span);
                 return 2;
             }
             config = new List<byte[]>();
-            ConfigStore.Save(configPath, config);
+            ConfigStore.Save((FastString)configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
 
@@ -132,13 +132,15 @@ public sealed class InitCommand : ICommand
             ConsoleOut.Hint(buf.Span);
         }
         ConfigStore.AddRepo(config, urlFast);
-        ConfigStore.Save(configPath, config);
+        ConfigStore.Save((FastString)configPath, config);
 
-        var cloneDir = Path.Combine(reposDir, cloneName);
-        if (!Directory.Exists(Path.Combine(cloneDir, ".git")))
+        var cloneDir = Fs.Combine(reposDir, cloneNameBytes);
+        if (!Fs.IsDirectory(Fs.Combine(cloneDir, ".git"u8)))
         {
-            // PHASE3-TEMP: GitClient.Clone still takes string URL; Phase 3b will flip.
-            var result = GitClient.Clone(Encoding.UTF8.GetString(urlBytes), cloneDir);
+            // PHASE3-TEMP: GitClient.Clone still takes string URL; Phase 3c will flip.
+            var result = GitClient.Clone(
+                Encoding.UTF8.GetString(urlBytes),
+                Encoding.UTF8.GetString(cloneDir));
             if (result.ExitCode != 0)
             {
                 var stderrTrimmed = ByteOps.Trim(result.StdErr);
@@ -195,8 +197,8 @@ public sealed class InitCommand : ICommand
         {
             if (c == '/')
             {
-                if (segmentLength == 0) return false; // empty owner or adjacent slashes
-                if (slashCount == 1) return false;    // more than one slash
+                if (segmentLength == 0) return false;
+                if (slashCount == 1) return false;
                 slashCount++;
                 segmentLength = 0;
                 continue;

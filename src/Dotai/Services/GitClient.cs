@@ -25,7 +25,6 @@ public static class GitClient
 
     private static string[] BuildArgv(string workDir, string[] args)
     {
-        // argv[0] is the executable name, then -C <workDir>, then the caller's args.
         var argv = new string[1 + 2 + args.Length];
         argv[0] = "git";
         argv[1] = "-C";
@@ -36,9 +35,10 @@ public static class GitClient
 
     public static GitResult Clone(string url, string target)
     {
-        var parent = Path.GetDirectoryName(target) ?? ".";
-        Directory.CreateDirectory(parent);
-        return Run(parent, "clone", url, target);
+        var targetBytes = Encoding.UTF8.GetBytes(target);
+        var parent = Fs.GetDirectoryName(targetBytes);
+        if (parent.Length > 0) Fs.CreateDirectory(parent);
+        return Run(Encoding.UTF8.GetString(parent), "clone", url, target);
     }
 
     public static GitResult StatusPorcelain(string workDir) =>
@@ -66,9 +66,12 @@ public static class GitClient
         return ByteOps.GetDefaultBranchFromSymbolicRef(r.StdOut).ToArray();
     }
 
-    public static bool RebaseInProgress(string workDir) =>
-        Directory.Exists(Path.Combine(workDir, ".git", "rebase-merge"))
-        || Directory.Exists(Path.Combine(workDir, ".git", "rebase-apply"));
+    public static bool RebaseInProgress(string workDir)
+    {
+        var wd = Encoding.UTF8.GetBytes(workDir);
+        return Fs.IsDirectory(Fs.Combine(Fs.Combine(wd, ".git"u8), "rebase-merge"u8))
+            || Fs.IsDirectory(Fs.Combine(Fs.Combine(wd, ".git"u8), "rebase-apply"u8));
+    }
 
     /// <summary>
     /// Derives a filesystem-safe clone directory name from a remote URL.
@@ -78,15 +81,11 @@ public static class GitClient
     public static byte[] DeriveCloneName(FastString url)
     {
         var bytes = url.Bytes;
-        // Trim trailing slashes
         while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
-        // Strip trailing .git (4 bytes)
         if (bytes.EndsWith(".git"u8)) bytes = bytes[..^4];
-        // Find last two slash positions
         int last = bytes.LastIndexOf((byte)'/');
         if (last < 0)
         {
-            // No slash: replace all slashes (none here) — return as-is with slashes as underscores
             var copy = bytes.ToArray();
             for (int i = 0; i < copy.Length; i++)
                 if (copy[i] == (byte)'/') copy[i] = (byte)'_';
@@ -95,7 +94,6 @@ public static class GitClient
         int secondLast = bytes[..last].LastIndexOf((byte)'/');
         ReadOnlySpan<byte> seg1 = secondLast >= 0 ? bytes[(secondLast + 1)..last] : bytes[..last];
         ReadOnlySpan<byte> seg2 = bytes[(last + 1)..];
-        // Join with '_'
         var result = new byte[seg1.Length + 1 + seg2.Length];
         seg1.CopyTo(result);
         result[seg1.Length] = (byte)'_';

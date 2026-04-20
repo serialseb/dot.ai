@@ -1,5 +1,6 @@
 using System.Collections.Generic;
-using System.IO;
+using System.Text;
+using Dotai.Services;
 
 namespace Dotai.Commands;
 
@@ -48,7 +49,7 @@ public static class SharedFlags
                     break;
 
                 case State.ExpectingProjectPath:
-                    startDir = Path.GetFullPath(token);
+                    startDir = Encoding.UTF8.GetString(Fs.GetFullPath(Encoding.UTF8.GetBytes(token)));
                     state = State.Normal;
                     break;
             }

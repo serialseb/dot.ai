@@ -12,28 +12,26 @@ public static class ConfigStore
         AllowTrailingCommas = true,
     };
 
-    public static List<byte[]> Load(string path)
+    // Byte-native API used by production code.
+    public static List<byte[]> Load(FastString path)
     {
-        if (!File.Exists(path)) return new List<byte[]>();
+        if (!Fs.Exists(path)) return new List<byte[]>();
 
-        var bytes = File.ReadAllBytes(path);
+        var bytes = Fs.ReadAllBytes(path);
         var reader = new Utf8JsonReader(bytes, ReadOptions);
 
         if (!reader.Read())
-            throw new InvalidDataException($"Config file '{path}' is empty.");
+            throw new InvalidDataException("Config file is empty.");
         if (reader.TokenType != JsonTokenType.StartObject)
-            throw new InvalidDataException($"Config file '{path}' must contain a JSON object at the root.");
+            throw new InvalidDataException("Config file must contain a JSON object at the root.");
 
         var result = new List<byte[]>();
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject) break;
             if (reader.TokenType != JsonTokenType.PropertyName)
-                throw new InvalidDataException($"Unexpected token {reader.TokenType} in '{path}'.");
+                throw new InvalidDataException($"Unexpected token {reader.TokenType} in config.");
 
-            // Read the raw UTF-8 property name bytes without decoding to string.
-            // HasValueSequence is rare (large property names spanning buffer segments).
-            // For simplicity fall back to GetString only in that path.
             byte[] keyBytes;
             if (reader.HasValueSequence)
             {
@@ -52,9 +50,9 @@ public static class ConfigStore
             }
 
             if (!reader.Read())
-                throw new InvalidDataException($"Truncated value for a key in '{path}'.");
+                throw new InvalidDataException("Truncated value for a key in config.");
 
-            SkipValue(ref reader); // accept any value, discard — values are reserved for the future
+            SkipValue(ref reader);
             result.Add(keyBytes);
         }
 
@@ -67,10 +65,11 @@ public static class ConfigStore
         config.Add(uri.Bytes.ToArray());
     }
 
-    public static void Save(string path, List<byte[]> config)
+    // Byte-native API used by production code.
+    public static void Save(FastString path, List<byte[]> config)
     {
-        var parent = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+        var parent = Fs.GetDirectoryName(path);
+        if (parent.Length > 0) Fs.CreateDirectory(parent);
 
         using var stream = new MemoryStream();
         var writerOptions = new JsonWriterOptions { Indented = true };
@@ -85,8 +84,15 @@ public static class ConfigStore
             }
             writer.WriteEndObject();
         }
-        File.WriteAllBytes(path, stream.ToArray());
+        Fs.WriteAllBytes(path, stream.ToArray());
     }
+
+    // String shims retained for tests (tests stay in .NET-land).
+    public static List<byte[]> Load(string path)
+        => Load((FastString)Encoding.UTF8.GetBytes(path));
+
+    public static void Save(string path, List<byte[]> config)
+        => Save((FastString)Encoding.UTF8.GetBytes(path), config);
 
     private static bool ContainsBytes(List<byte[]> list, FastString candidate)
     {
@@ -108,7 +114,6 @@ public static class ConfigStore
                     else if (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray) depth--;
                 }
                 break;
-            // scalar — already positioned on the value token, nothing to skip
         }
     }
 }
