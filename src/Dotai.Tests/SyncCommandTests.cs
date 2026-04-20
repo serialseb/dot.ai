@@ -8,7 +8,7 @@ namespace Dotai.Tests;
 
 public class SyncCommandTests
 {
-    private static string MakeProject(string baseDir, string remoteUrl)
+    private static string MakeProject(string baseDir, string remoteUrl, string? cloneNameOverride = null)
     {
         var repo = Path.Combine(baseDir, "project");
         Directory.CreateDirectory(repo);
@@ -18,7 +18,7 @@ public class SyncCommandTests
         var aiDir = Path.Combine(repo, ".ai");
         var reposDir = Path.Combine(aiDir, "repositories");
         Directory.CreateDirectory(reposDir);
-        var cloneKey = GitClient.DeriveCloneName(remoteUrl);
+        var cloneKey = cloneNameOverride ?? GitClient.DeriveCloneName(remoteUrl);
         GitClient.Clone(remoteUrl, Path.Combine(reposDir, cloneKey));
 
         var config = new Dictionary<string, JsonElement>();
@@ -100,5 +100,55 @@ public class SyncCommandTests
         var code = cmd.Execute(Array.Empty<string>());
 
         Assert.Equal(3, code);
+    }
+
+    [Fact]
+    public void SkillshareWarningDoesNotBlockSync()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+            File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
+        var project = MakeProject(tmp.Path, remoteUrl, GitClient.DeriveCloneName(remoteUrl));
+        Directory.CreateDirectory(Path.Combine(project, ".skillshare"));
+        var cmd = new SyncCommand(project);
+
+        var code = cmd.Execute(Array.Empty<string>());
+
+        Assert.Equal(0, code);
+    }
+
+    [Fact]
+    public void MalformedConfigErrorsWithoutForce()
+    {
+        using var tmp = new TempDir();
+        var repo = Path.Combine(tmp.Path, "project");
+        Directory.CreateDirectory(repo);
+        LocalGitRepo.Run(repo, "init", "--initial-branch=main");
+        var aiDir = Path.Combine(repo, ".ai");
+        Directory.CreateDirectory(aiDir);
+        File.WriteAllText(Path.Combine(aiDir, "config.jsonc"), "[\"not an object\"]");
+        var cmd = new SyncCommand(repo);
+
+        var code = cmd.Execute(Array.Empty<string>());
+
+        Assert.Equal(2, code);
+    }
+
+    [Fact]
+    public void MalformedConfigResetsWithForce()
+    {
+        using var tmp = new TempDir();
+        var repo = Path.Combine(tmp.Path, "project");
+        Directory.CreateDirectory(repo);
+        LocalGitRepo.Run(repo, "init", "--initial-branch=main");
+        var aiDir = Path.Combine(repo, ".ai");
+        Directory.CreateDirectory(aiDir);
+        File.WriteAllText(Path.Combine(aiDir, "config.jsonc"), "[\"not an object\"]");
+        var cmd = new SyncCommand(repo);
+
+        var code = cmd.Execute(new[] { "--force" });
+
+        // after reset, config is empty → sync exits 1 "no repositories configured"
+        Assert.Equal(1, code);
     }
 }

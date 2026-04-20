@@ -53,6 +53,45 @@ public static class SkillLinker
 
     }
 
+    public static void ForceReset(string repoRoot, IReadOnlyList<string> agents)
+    {
+        var ownedPrefix = Path.GetFullPath(Path.Combine(repoRoot, ".ai", "repositories"))
+            + Path.DirectorySeparatorChar;
+
+        foreach (var agent in agents)
+        {
+            var dir = Path.Combine(repoRoot, agent, "skills");
+            if (!Directory.Exists(dir)) continue;
+            foreach (var entry in Directory.EnumerateFileSystemEntries(dir))
+                RemoveIfOwned(entry, ownedPrefix);
+        }
+
+        RemoveOwnedFileSymlinksInTree(repoRoot, ownedPrefix);
+    }
+
+    private static void RemoveOwnedFileSymlinksInTree(string repoRoot, string ownedPrefix)
+    {
+        foreach (var entry in Directory.EnumerateFiles(repoRoot, "*", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(repoRoot, entry);
+            if (rel.StartsWith(".ai" + Path.DirectorySeparatorChar) || rel == ".ai") continue;
+            if (rel.StartsWith(".git" + Path.DirectorySeparatorChar) || rel == ".git") continue;
+            RemoveIfOwned(entry, ownedPrefix);
+        }
+    }
+
+    private static void RemoveIfOwned(string path, string ownedPrefix)
+    {
+        var info = new FileInfo(path);
+        var target = info.LinkTarget;
+        if (target == null) return;
+        var absolute = Path.IsPathRooted(target)
+            ? target
+            : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path) ?? ".", target));
+        if (!absolute.StartsWith(ownedPrefix)) return;
+        File.Delete(path);
+    }
+
     private static void RemoveIfDanglingAndOwned(string path, string ownedPrefix)
     {
         var info = new FileInfo(path);

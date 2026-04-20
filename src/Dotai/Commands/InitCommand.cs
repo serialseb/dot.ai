@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dotai.Services;
 using Dotai.Ui;
@@ -51,6 +52,9 @@ public sealed class InitCommand : ICommand
             return 1;
         }
 
+        if (Directory.Exists(Path.Combine(repoRoot, ".skillshare")))
+            ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure.");
+
         var parts = arg.Split('/');
         var owner = parts[0];
         var repo = parts[1];
@@ -64,7 +68,22 @@ public sealed class InitCommand : ICommand
         GitignoreWriter.EnsureLine(Path.Combine(aiDir, ".gitignore"), "repositories/");
 
         var configPath = Path.Combine(aiDir, "config.jsonc");
-        var config = ConfigStore.Load(configPath);
+        Dictionary<string, JsonElement> config;
+        try
+        {
+            config = ConfigStore.Load(configPath);
+        }
+        catch (InvalidDataException)
+        {
+            if (!parsed.Force)
+            {
+                ConsoleOut.Error($"config at {configPath} is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost).");
+                return 2;
+            }
+            config = new Dictionary<string, JsonElement>();
+            ConfigStore.Save(configPath, config);
+            ConsoleOut.Warn("--force: reset malformed config. previous configuration lost.");
+        }
         var alreadyRegistered = config.ContainsKey(url);
         if (alreadyRegistered) ConsoleOut.Hint($"repository already registered: {url}");
         ConfigStore.AddRepo(config, url);
@@ -84,7 +103,7 @@ public sealed class InitCommand : ICommand
 
         Robot.ShowIfTty();
 
-        var sync = new SyncCommand(startDir) { Silent = true };
+        var sync = new SyncCommand(startDir) { Silent = true, Force = parsed.Force };
         var syncCode = sync.Execute(Array.Empty<string>());
         if (syncCode == 0)
         {

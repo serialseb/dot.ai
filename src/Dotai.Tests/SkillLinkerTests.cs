@@ -145,4 +145,55 @@ public class SkillLinkerTests
 
         Assert.Equal(2, report.FilesLinked);
     }
+
+    [Fact]
+    public void ForceResetRemovesOwnedSkillSymlinks()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+        });
+        var report = new SyncReport();
+        SkillLinker.LinkSkills(tmp.Path, clone, new[] { ".claude" }, report);
+
+        SkillLinker.ForceReset(tmp.Path, new[] { ".claude" });
+
+        Assert.False(Directory.Exists(Path.Combine(tmp.Path, ".claude", "skills", "alpha")));
+    }
+
+    [Fact]
+    public void ForceResetLeavesUserOwnedSymlinksAlone()
+    {
+        using var tmp = new TempDir();
+        var agent = Path.Combine(tmp.Path, ".claude", "skills");
+        Directory.CreateDirectory(agent);
+        var userTarget = Path.Combine(tmp.Path, "user-skill");
+        Directory.CreateDirectory(userTarget);
+        File.CreateSymbolicLink(Path.Combine(agent, "user"), userTarget);
+
+        SkillLinker.ForceReset(tmp.Path, new[] { ".claude" });
+
+        Assert.True(new FileInfo(Path.Combine(agent, "user")).LinkTarget != null);
+    }
+
+    [Fact]
+    public void ForceResetRemovesOwnedFileSymlinks()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "1");
+        });
+        var report = new SyncReport();
+        SkillLinker.LinkFiles(tmp.Path, clone, report);
+        Assert.True(File.Exists(Path.Combine(tmp.Path, "one.txt")));
+
+        SkillLinker.ForceReset(tmp.Path, Array.Empty<string>());
+
+        Assert.False(File.Exists(Path.Combine(tmp.Path, "one.txt")));
+    }
 }

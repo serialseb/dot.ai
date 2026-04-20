@@ -59,4 +59,25 @@ public class SharedFlagsTests
 
         Assert.Equal(cwd, r.StartDir);
     }
+
+    [Fact]
+    public void DashFSetsForce()
+    {
+        var r = SharedFlags.Parse(new[] { "-f", "owner/repo" }, "/default");
+        Assert.True(r.Force);
+    }
+
+    [Fact]
+    public void LongFormForceIsEquivalent()
+    {
+        var r = SharedFlags.Parse(new[] { "--force", "owner/repo" }, "/default");
+        Assert.True(r.Force);
+    }
+
+    [Fact]
+    public void NoForceDefaultsFalse()
+    {
+        var r = SharedFlags.Parse(new[] { "owner/repo" }, "/default");
+        Assert.False(r.Force);
+    }
 }

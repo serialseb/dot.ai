@@ -19,6 +19,7 @@ public sealed class HelpCommand : ICommand
 
             standard flags (accepted by every command, placed after the command):
               -p, --project <path>   run as if invoked from <path> (default: current directory)
+              -f, --force            reset dotai-owned symlinks and overwrite malformed config
 
             config is kept in .ai/config.jsonc at the git repo root.
             """);

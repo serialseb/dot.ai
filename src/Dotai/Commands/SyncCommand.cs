@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dotai.Services;
 using Dotai.Ui;
 
@@ -11,6 +12,7 @@ public sealed class SyncCommand : ICommand
     public SyncCommand(string startDir) { _startDir = startDir; }
 
     public bool Silent { get; init; }
+    public bool Force { get; init; }
 
     public string Name => "sync";
     public string Help => "dotai sync [standard flags] — sync all configured source repositories.";
@@ -25,6 +27,7 @@ public sealed class SyncCommand : ICommand
 
         var rest = parsed.Positional;
         var startDir = parsed.StartDir;
+        var force = parsed.Force || Force;
 
         if (rest.Length > 0 && rest[0] == "--help")
         {
@@ -39,8 +42,27 @@ public sealed class SyncCommand : ICommand
             return 1;
         }
 
+        if (Directory.Exists(Path.Combine(repoRoot, ".skillshare")))
+            ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure.");
+
         var configPath = Path.Combine(repoRoot, ".ai", "config.jsonc");
-        var config = ConfigStore.Load(configPath);
+        Dictionary<string, JsonElement> config;
+        try
+        {
+            config = ConfigStore.Load(configPath);
+        }
+        catch (InvalidDataException)
+        {
+            if (!force)
+            {
+                ConsoleOut.Error($"config at {configPath} is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost).");
+                return 2;
+            }
+            config = new Dictionary<string, JsonElement>();
+            ConfigStore.Save(configPath, config);
+            ConsoleOut.Warn("--force: reset malformed config. previous configuration lost.");
+        }
+
         if (config.Count == 0)
         {
             ConsoleOut.Error("no repositories configured (run dotai init first)");
@@ -48,6 +70,13 @@ public sealed class SyncCommand : ICommand
         }
 
         var agents = AgentDetector.Detect(repoRoot);
+
+        if (force)
+        {
+            SkillLinker.ForceReset(repoRoot, agents);
+            ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost.");
+        }
+
         var report = new SyncReport();
 
         foreach (var (url, _) in config)
