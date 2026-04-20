@@ -6,7 +6,7 @@ namespace Dotai.Services;
 public static unsafe class SkillLinker
 {
     public static void LinkSkills(
-        NativeStringView repoRoot, NativeStringView clone, NativeListView<NativeString> agents, ref SyncReport report)
+        NativeStringView repoRoot, NativeStringView clone, NativeListView<NativeString> agents, ref SyncReport report, bool force = false)
     {
         var skillsDir = Fs.Combine(clone, "skills"u8);
         if (!Fs.IsDirectory(skillsDir.AsView()))
@@ -30,7 +30,7 @@ public static unsafe class SkillLinker
                 Fs.TryCreateDirectory(targetDir.AsView());
                 var target = Fs.Combine(targetDir.AsView(), skillName.AsView());
                 targetDir.Dispose();
-                if (EnsureSymlink(target.AsView(), skillPath, ref report)) report.SkillsLinked++;
+                if (EnsureSymlink(target.AsView(), skillPath, force, ref report)) report.SkillsLinked++;
                 target.Dispose();
             }
             skillName.Dispose();
@@ -39,7 +39,7 @@ public static unsafe class SkillLinker
         skillPaths.Dispose();
     }
 
-    public static void LinkFiles(NativeStringView repoRoot, NativeStringView clone, ref SyncReport report)
+    public static void LinkFiles(NativeStringView repoRoot, NativeStringView clone, ref SyncReport report, bool force = false)
     {
         var filesDir = Fs.Combine(clone, "files"u8);
         if (!Fs.IsDirectory(filesDir.AsView()))
@@ -58,7 +58,7 @@ public static unsafe class SkillLinker
             var parent = Fs.GetDirectoryName(target.AsView());
             if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
             parent.Dispose();
-            if (EnsureSymlink(target.AsView(), filePath, ref report)) report.FilesLinked++;
+            if (EnsureSymlink(target.AsView(), filePath, force, ref report)) report.FilesLinked++;
             target.Dispose();
         }
         filesDir.Dispose();
@@ -183,7 +183,7 @@ public static unsafe class SkillLinker
         Fs.TryDeleteFile(path);
     }
 
-    private static bool EnsureSymlink(NativeStringView target, NativeStringView source, ref SyncReport report)
+    private static bool EnsureSymlink(NativeStringView target, NativeStringView source, bool force, ref SyncReport report)
     {
         bool targetExists = Fs.Exists(target);
         bool targetIsLink = Fs.IsSymlink(target);
@@ -192,6 +192,21 @@ public static unsafe class SkillLinker
         {
             if (!Fs.TryReadSymbolicLinkTarget(target, out var existingLinkTarget))
             {
+                if (force)
+                {
+                    var bakBuf = new NativeBuffer(target.Length + 4);
+                    bakBuf.Append(target);
+                    bakBuf.Append(".bak"u8);
+                    var bak = bakBuf.Freeze();
+                    if (Fs.Exists(bak.AsView())) Fs.TryDeleteFile(bak.AsView());
+                    if (Fs.TryRename(target, bak.AsView()))
+                    {
+                        bak.Dispose();
+                        Fs.TryCreateSymbolicLink(target, source);
+                        return true;
+                    }
+                    bak.Dispose();
+                }
                 var buf = new NativeBuffer(target.Length + 48);
                 buf.Append(target);
                 buf.Append(": exists as real file/directory, not a symlink"u8);

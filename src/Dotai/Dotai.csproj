@@ -41,8 +41,8 @@
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <IlcInstructionSet>apple-m1</IlcInstructionSet>
     <IlcExportUnmanagedEntryPoints>false</IlcExportUnmanagedEntryPoints>
-    <!-- PGO: reachability profile driven from 5-day workload (init + sync + force) -->
-    <_ReachabilityInstrumentationFile>$(MSBuildThisFileDirectory)dotai.reach.mprof</_ReachabilityInstrumentationFile>
+    <!-- PGO: reachability profile disabled (was causing silent traps on cold paths). -->
+    <!-- <_ReachabilityInstrumentationFile>$(MSBuildThisFileDirectory)dotai.reach.mprof</_ReachabilityInstrumentationFile> -->
   </PropertyGroup>
   <ItemGroup>
     <DirectPInvoke Include="libc" />

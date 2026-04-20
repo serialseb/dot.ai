@@ -241,4 +241,52 @@ public class SkillLinkerTests
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, "one.txt")));
     }
+
+    [Fact]
+    public void ForceBacksUpConcreteFileAndReplacesWithSymlink()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "source");
+        });
+        var concrete = Path.Combine(tmp.Path, "one.txt");
+        File.WriteAllText(concrete, "user-local");
+
+        var report = new SyncReport(4);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report, force: true);
+
+        Assert.True(File.Exists(concrete));
+        Assert.NotNull(new FileInfo(concrete).LinkTarget);
+        var bak = concrete + ".bak";
+        Assert.True(File.Exists(bak));
+        Assert.Equal("user-local", File.ReadAllText(bak));
+        Assert.Equal(0, report.Conflicts.Length);
+        report.Dispose();
+    }
+
+    [Fact]
+    public void NoForceConcreteFileReportsConflict()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "source");
+        });
+        var concrete = Path.Combine(tmp.Path, "one.txt");
+        File.WriteAllText(concrete, "user-local");
+
+        var report = new SyncReport(4);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report);
+
+        Assert.Null(new FileInfo(concrete).LinkTarget);
+        Assert.Equal("user-local", File.ReadAllText(concrete));
+        Assert.False(File.Exists(concrete + ".bak"));
+        Assert.True(report.Conflicts.Length > 0);
+        report.Dispose();
+    }
 }

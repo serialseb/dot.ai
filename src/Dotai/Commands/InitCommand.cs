@@ -54,6 +54,7 @@ public sealed class InitCommand
             return 1;
         }
 
+        ConsoleOut.Step("finding repository"u8);
         if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
@@ -127,6 +128,11 @@ public sealed class InitCommand
         if (!Fs.IsDirectory(cloneDotGit.AsView()))
         {
             cloneDotGit.Dispose();
+            var downloadBuf = new NativeBuffer(32 + arg.Length);
+            downloadBuf.Append("downloading "u8);
+            downloadBuf.Append(arg);
+            ConsoleOut.Step(downloadBuf.AsView());
+            downloadBuf.Dispose();
             var result = GitClient.Clone(urlNs.AsView(), cloneDir.AsView());
             if (result.ExitCode != 0)
             {
@@ -140,11 +146,6 @@ public sealed class InitCommand
                 urlNs.Dispose(); cloneDir.Dispose(); repoRoot.Dispose(); parsed.Dispose();
                 return 2;
             }
-            var clonedBuf = new NativeBuffer(64);
-            clonedBuf.Append("cloned "u8);
-            clonedBuf.Append(urlNs.AsView());
-            ConsoleOut.Info(clonedBuf.AsView());
-            clonedBuf.Dispose();
             result.Dispose();
         }
         else
@@ -156,6 +157,7 @@ public sealed class InitCommand
 
         Robot.ShowIfTty();
 
+        ConsoleOut.Step("installing skills and files"u8);
         var syncCode = SyncCommand.Execute(parsed.StartDir.AsView(), parsed.Force, silent: true,
             out int skills, out int files);
         if (syncCode == 0)

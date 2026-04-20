@@ -98,9 +98,10 @@ public sealed class SyncCommand
 
         for (int i = 0; i < config.Length; i++)
         {
-            SyncOne(repoRoot.AsView(), config[i], agentNames.AsView(), ref report);
+            SyncOne(repoRoot.AsView(), config[i], agentNames.AsView(), silent, force, ref report);
         }
 
+        int repoCount = config.Length;
         for (int i = 0; i < config.Length; i++) config[i].Dispose();
         config.Dispose();
 
@@ -134,14 +135,14 @@ public sealed class SyncCommand
 
         if (!silent)
         {
-            NativeStringView plural = config.Length == 1 ? "repository"u8 : "repositories"u8;
+            NativeStringView plural = repoCount == 1 ? "repository"u8 : "repositories"u8;
             var buf = new NativeBuffer(64);
             buf.Append("synced "u8);
             buf.AppendInt(report.SkillsLinked);
             buf.Append(" skills, "u8);
             buf.AppendInt(report.FilesLinked);
             buf.Append(" files across "u8);
-            buf.AppendInt(config.Length);
+            buf.AppendInt(repoCount);
             buf.AppendByte((byte)' ');
             buf.Append(plural);
             ConsoleOut.Success(buf.AsView());
@@ -158,7 +159,7 @@ public sealed class SyncCommand
         "dotai sync [standard flags] — sync all configured source repositories."u8;
 
     private static void SyncOne(NativeStringView repoRoot, in RepoConfig entry,
-        NativeListView<NativeString> agents, ref SyncReport report)
+        NativeListView<NativeString> agents, bool silent, bool force, ref SyncReport report)
     {
         var nameView = entry.Name.AsView();
 
@@ -202,6 +203,14 @@ public sealed class SyncCommand
         var status = GitClient.StatusPorcelain(clone.AsView());
         if (!status.StdOut.AsView().IsBlank())
         {
+            if (!silent)
+            {
+                var prepBuf = new NativeBuffer(48 + nameView.Length);
+                prepBuf.Append("preparing changes in "u8);
+                prepBuf.Append(nameView);
+                ConsoleOut.Step(prepBuf.AsView());
+                prepBuf.Dispose();
+            }
             var addResult = GitClient.AddAll(clone.AsView());
             addResult.Dispose();
             var commitResult = GitClient.Commit(clone.AsView(), "dotai sync"u8);
@@ -220,6 +229,15 @@ public sealed class SyncCommand
         }
         status.Dispose();
 
+        if (!silent)
+        {
+            var syncBuf = new NativeBuffer(48 + nameView.Length);
+            syncBuf.Append("syncing "u8);
+            syncBuf.Append(nameView);
+            syncBuf.Append(" with remote"u8);
+            ConsoleOut.Step(syncBuf.AsView());
+            syncBuf.Dispose();
+        }
         var fetchResult = GitClient.Fetch(clone.AsView());
         if (fetchResult.ExitCode != 0)
         {
@@ -255,6 +273,14 @@ public sealed class SyncCommand
         }
         rebase.Dispose();
 
+        if (!silent)
+        {
+            var sendBuf = new NativeBuffer(48 + nameView.Length);
+            sendBuf.Append("sending changes to "u8);
+            sendBuf.Append(nameView);
+            ConsoleOut.Step(sendBuf.AsView());
+            sendBuf.Dispose();
+        }
         var push = GitClient.Push(clone.AsView(), branchNs.AsView());
         branchNs.Dispose();
         if (push.ExitCode != 0)
@@ -274,22 +300,25 @@ public sealed class SyncCommand
 
         var skillsBefore = report.SkillsLinked;
         var filesBefore = report.FilesLinked;
-        SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report);
-        SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report);
+        SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report, force);
+        SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report, force);
         SkillLinker.CleanupOrphans(repoRoot, agents);
         var deltaSkills = report.SkillsLinked - skillsBefore;
         var deltaFiles = report.FilesLinked - filesBefore;
 
-        var msgBuf = new NativeBuffer(64);
-        msgBuf.Append("  \xe2\x80\xa2 "u8);
-        msgBuf.Append(nameView);
-        msgBuf.Append(": "u8);
-        msgBuf.AppendInt(deltaSkills);
-        msgBuf.Append(" skills, "u8);
-        msgBuf.AppendInt(deltaFiles);
-        msgBuf.Append(" files"u8);
-        ConsoleOut.Info(msgBuf.AsView());
-        msgBuf.Dispose();
+        if (!silent)
+        {
+            var msgBuf = new NativeBuffer(64);
+            msgBuf.Append("  \xe2\x80\xa2 "u8);
+            msgBuf.Append(nameView);
+            msgBuf.Append(": "u8);
+            msgBuf.AppendInt(deltaSkills);
+            msgBuf.Append(" skills, "u8);
+            msgBuf.AppendInt(deltaFiles);
+            msgBuf.Append(" files"u8);
+            ConsoleOut.Info(msgBuf.AsView());
+            msgBuf.Dispose();
+        }
         clone.Dispose();
         urlNs.Dispose();
     }

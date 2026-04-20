@@ -1,0 +1,1 @@
+/Users/serialseb/Dev/sfk/dot.ai/.ai/repositories/SafeKeepIt_aihelp/files/AGENTS.shared.md

@@ -84,6 +84,9 @@ internal static unsafe partial class Libc
     [LibraryImport("libc", EntryPoint = "unlink")]
     internal static partial int Unlink(byte* path);
 
+    [LibraryImport("libc", EntryPoint = "rename")]
+    internal static partial int Rename(byte* from, byte* to);
+
     [LibraryImport("libc", EntryPoint = "opendir")]
     internal static partial IntPtr Opendir(byte* path);
 
