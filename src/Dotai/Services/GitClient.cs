@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System.Text;
 
 namespace Dotai.Services;
 
@@ -6,22 +6,25 @@ public record GitResult(int ExitCode, string StdOut, string StdErr);
 
 public static class GitClient
 {
+    // Passes "-C <workDir>" as the first arguments so posix_spawnp does not
+    // need a working-directory parameter (posix_spawn has no direct equivalent
+    // of ProcessStartInfo.WorkingDirectory).
     public static GitResult Run(string workDir, params string[] args)
     {
-        var psi = new ProcessStartInfo("git")
-        {
-            WorkingDirectory = workDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
-        var stdoutTask = p.StandardOutput.ReadToEndAsync();
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        p.WaitForExit();
-        Task.WaitAll(stdoutTask, stderrTask);
-        return new GitResult(p.ExitCode, stdoutTask.Result, stderrTask.Result);
+        var argv = BuildArgv(workDir, args);
+        var (exitCode, stdout, stderr) = PosixSpawn.Run("git", argv);
+        return new GitResult(exitCode, Encoding.UTF8.GetString(stdout), Encoding.UTF8.GetString(stderr));
+    }
+
+    private static string[] BuildArgv(string workDir, string[] args)
+    {
+        // argv[0] is the executable name, then -C <workDir>, then the caller's args.
+        var argv = new string[1 + 2 + args.Length];
+        argv[0] = "git";
+        argv[1] = "-C";
+        argv[2] = workDir;
+        args.CopyTo(argv, 3);
+        return argv;
     }
 
     public static GitResult Clone(string url, string target)

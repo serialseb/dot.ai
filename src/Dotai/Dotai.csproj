@@ -22,6 +22,7 @@
     <IlcDisableReflection>true</IlcDisableReflection>
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <IlcScanReflection>false</IlcScanReflection>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
     <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
     <OptimizationPreference>Size</OptimizationPreference>
