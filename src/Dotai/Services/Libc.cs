@@ -28,6 +28,9 @@ internal static unsafe partial class Libc
     [LibraryImport("libc", EntryPoint = "close")]
     internal static partial int Close(int fd);
 
+    [LibraryImport("libc", EntryPoint = "abort")]
+    internal static partial void Abort();
+
     [LibraryImport("libc", EntryPoint = "read")]
     internal static partial long Read(int fd, byte* buf, nuint count);
 

@@ -37,4 +37,7 @@
     <DebugSymbols>false</DebugSymbols>
     <CustomNativeMain>true</CustomNativeMain>
   </PropertyGroup>
+  <ItemGroup>
+    <DirectPInvoke Include="libc" />
+  </ItemGroup>
 </Project>
