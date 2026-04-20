@@ -1,112 +1,159 @@
-using Dotai.Text;
+using Dotai.Native;
 
 namespace Dotai.Services;
 
-public sealed class GitResult
+public struct GitResult
 {
-    public int ExitCode { get; }
-    public byte[] StdOut { get; }
-    public byte[] StdErr { get; }
-    public GitResult(int exit, byte[] stdout, byte[] stderr) { ExitCode = exit; StdOut = stdout; StdErr = stderr; }
+    public int ExitCode;
+    public NativeString StdOut;
+    public NativeString StdErr;
+    public GitResult(int exit, NativeString stdout, NativeString stderr) { ExitCode = exit; StdOut = stdout; StdErr = stderr; }
+    public void Dispose() { StdOut.Dispose(); StdErr.Dispose(); }
 }
 
-public static class GitClient
+public static unsafe class GitClient
 {
-    // Null-terminated "git\0" for posix_spawnp — no string encoding needed.
-    private static readonly byte[] GitExec = "git\0"u8.ToArray();
-
-    // Passes "-C <workDir>" as the first arguments so posix_spawnp does not
-    // need a working-directory parameter (posix_spawn has no direct equivalent
-    // of ProcessStartInfo.WorkingDirectory).
-    public static GitResult Run(FastString workDir, params byte[][] args)
+    public static GitResult Run(NativeStringView workDir, params NativeString[] args)
     {
-        var argv = BuildArgv(workDir, args);
-        var (exitCode, stdout, stderr) = PosixSpawn.Run(GitExec, argv);
-        return new GitResult(exitCode, stdout, stderr);
-    }
-
-    private static byte[][] BuildArgv(FastString workDir, byte[][] args)
-    {
-        // argv[0] = "git", argv[1] = "-C", argv[2] = workDir, argv[3..] = args
-        var argv = new byte[1 + 2 + args.Length][];
-        argv[0] = "git"u8.ToArray();
-        argv[1] = "-C"u8.ToArray();
-        argv[2] = workDir.Bytes.ToArray();
+        // Build: git -C <workDir> [args...]
+        var argv = new NativeList<NativeString>(3 + args.Length);
+        argv.Add(NativeString.From("git"u8));
+        argv.Add(NativeString.From("-C"u8));
+        argv.Add(NativeString.From(workDir));
         for (int i = 0; i < args.Length; i++)
-            argv[3 + i] = args[i];
-        return argv;
+            argv.Add(NativeString.From(args[i].AsView()));
+        var result = PosixSpawn.Run("git"u8, argv.AsView());
+        for (int i = 0; i < argv.Length; i++) argv[i].Dispose();
+        argv.Dispose();
+        return result;
     }
 
-    public static GitResult Clone(FastString url, FastString target)
+    // Overload accepting NativeStringView args (literal u8 strings)
+    public static GitResult Run(NativeStringView workDir, NativeStringView arg0)
+    {
+        var argv = new NativeList<NativeString>(4);
+        argv.Add(NativeString.From("git"u8));
+        argv.Add(NativeString.From("-C"u8));
+        argv.Add(NativeString.From(workDir));
+        argv.Add(NativeString.From(arg0));
+        var result = PosixSpawn.Run("git"u8, argv.AsView());
+        for (int i = 0; i < argv.Length; i++) argv[i].Dispose();
+        argv.Dispose();
+        return result;
+    }
+
+    public static GitResult Run(NativeStringView workDir, NativeStringView arg0, NativeStringView arg1)
+    {
+        var argv = new NativeList<NativeString>(5);
+        argv.Add(NativeString.From("git"u8));
+        argv.Add(NativeString.From("-C"u8));
+        argv.Add(NativeString.From(workDir));
+        argv.Add(NativeString.From(arg0));
+        argv.Add(NativeString.From(arg1));
+        var result = PosixSpawn.Run("git"u8, argv.AsView());
+        for (int i = 0; i < argv.Length; i++) argv[i].Dispose();
+        argv.Dispose();
+        return result;
+    }
+
+    public static GitResult Run(NativeStringView workDir, NativeStringView arg0, NativeStringView arg1, NativeStringView arg2)
+    {
+        var argv = new NativeList<NativeString>(6);
+        argv.Add(NativeString.From("git"u8));
+        argv.Add(NativeString.From("-C"u8));
+        argv.Add(NativeString.From(workDir));
+        argv.Add(NativeString.From(arg0));
+        argv.Add(NativeString.From(arg1));
+        argv.Add(NativeString.From(arg2));
+        var result = PosixSpawn.Run("git"u8, argv.AsView());
+        for (int i = 0; i < argv.Length; i++) argv[i].Dispose();
+        argv.Dispose();
+        return result;
+    }
+
+    public static GitResult Clone(NativeStringView url, NativeStringView target)
     {
         var parent = Fs.GetDirectoryName(target);
-        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
-        // Clone uses the CWD (parent dir) as workDir, since target is absolute.
-        var argv = new byte[][]
-        {
-            "git"u8.ToArray(),
-            "clone"u8.ToArray(),
-            url.Bytes.ToArray(),
-            target.Bytes.ToArray(),
-        };
-        var (exitCode, stdout, stderr) = PosixSpawn.Run(GitExec, argv);
-        return new GitResult(exitCode, stdout, stderr);
+        if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
+        parent.Dispose();
+        var argv = new NativeList<NativeString>(4);
+        argv.Add(NativeString.From("git"u8));
+        argv.Add(NativeString.From("clone"u8));
+        argv.Add(NativeString.From(url));
+        argv.Add(NativeString.From(target));
+        var result = PosixSpawn.Run("git"u8, argv.AsView());
+        for (int i = 0; i < argv.Length; i++) argv[i].Dispose();
+        argv.Dispose();
+        return result;
     }
 
-    public static GitResult StatusPorcelain(FastString workDir) =>
-        Run(workDir, "status"u8.ToArray(), "--porcelain"u8.ToArray());
+    public static GitResult StatusPorcelain(NativeStringView workDir)
+        => Run(workDir, "status"u8, "--porcelain"u8);
 
-    public static GitResult AddAll(FastString workDir) =>
-        Run(workDir, "add"u8.ToArray(), "-A"u8.ToArray());
+    public static GitResult AddAll(NativeStringView workDir)
+        => Run(workDir, "add"u8, "-A"u8);
 
-    public static GitResult Commit(FastString workDir, FastString message) =>
-        Run(workDir, "commit"u8.ToArray(), "-m"u8.ToArray(), message.Bytes.ToArray());
+    public static GitResult Commit(NativeStringView workDir, NativeStringView message)
+        => Run(workDir, "commit"u8, "-m"u8, message);
 
-    public static GitResult Fetch(FastString workDir) =>
-        Run(workDir, "fetch"u8.ToArray(), "origin"u8.ToArray());
+    public static GitResult Fetch(NativeStringView workDir)
+        => Run(workDir, "fetch"u8, "origin"u8);
 
-    public static GitResult Rebase(FastString workDir, FastString upstream) =>
-        Run(workDir, "rebase"u8.ToArray(), upstream.Bytes.ToArray());
+    public static GitResult Rebase(NativeStringView workDir, NativeStringView upstream)
+        => Run(workDir, "rebase"u8, upstream);
 
-    public static GitResult Push(FastString workDir, FastString branch) =>
-        Run(workDir, "push"u8.ToArray(), "origin"u8.ToArray(), branch.Bytes.ToArray());
+    public static GitResult Push(NativeStringView workDir, NativeStringView branch)
+        => Run(workDir, "push"u8, "origin"u8, branch);
 
-    public static byte[] DefaultBranch(FastString workDir)
+    public static NativeString DefaultBranch(NativeStringView workDir)
     {
-        var r = Run(workDir, "symbolic-ref"u8.ToArray(), "refs/remotes/origin/HEAD"u8.ToArray());
-        if (r.ExitCode != 0) return "main"u8.ToArray();
-        return ByteOps.GetDefaultBranchFromSymbolicRef(r.StdOut).ToArray();
+        var r = Run(workDir, "symbolic-ref"u8, "refs/remotes/origin/HEAD"u8);
+        if (r.ExitCode != 0)
+        {
+            r.Dispose();
+            return NativeString.From("main"u8);
+        }
+        var branch = NativeString.From(r.StdOut.AsView().GetDefaultBranchFromSymbolicRef());
+        r.Dispose();
+        return branch;
     }
 
-    public static bool RebaseInProgress(FastString workDir)
-        => Fs.IsDirectory(Fs.Combine(Fs.Combine(workDir, ".git"u8), "rebase-merge"u8))
-        || Fs.IsDirectory(Fs.Combine(Fs.Combine(workDir, ".git"u8), "rebase-apply"u8));
+    public static bool RebaseInProgress(NativeStringView workDir)
+    {
+        var dotGit = Fs.Combine(workDir, ".git"u8);
+        var rebaseMerge = Fs.Combine(dotGit.AsView(), "rebase-merge"u8);
+        var rebaseApply = Fs.Combine(dotGit.AsView(), "rebase-apply"u8);
+        bool result = Fs.IsDirectory(rebaseMerge.AsView()) || Fs.IsDirectory(rebaseApply.AsView());
+        dotGit.Dispose();
+        rebaseMerge.Dispose();
+        rebaseApply.Dispose();
+        return result;
+    }
 
     /// <summary>
     /// Derives a filesystem-safe clone directory name from a remote URL.
-    /// Both InitCommand and SyncCommand must use this method so the clone
-    /// directory name is always consistent regardless of how it was registered.
     /// </summary>
-    public static byte[] DeriveCloneName(FastString url)
+    public static NativeString DeriveCloneName(NativeStringView url)
     {
         var bytes = url.Bytes;
         while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
-        if (bytes.EndsWith(".git"u8)) bytes = bytes[..^4];
+        if (new NativeStringView(bytes).EndsWith(".git"u8)) bytes = bytes[..^4];
         int last = bytes.LastIndexOf((byte)'/');
         if (last < 0)
         {
-            var copy = bytes.ToArray();
-            for (int i = 0; i < copy.Length; i++)
-                if (copy[i] == (byte)'/') copy[i] = (byte)'_';
-            return copy;
+            // Replace all '/' with '_'
+            var buf = new NativeBuffer(bytes.Length);
+            for (int i = 0; i < bytes.Length; i++)
+                buf.AppendByte(bytes[i] == (byte)'/' ? (byte)'_' : bytes[i]);
+            return buf.Freeze();
         }
         int secondLast = bytes[..last].LastIndexOf((byte)'/');
         ReadOnlySpan<byte> seg1 = secondLast >= 0 ? bytes[(secondLast + 1)..last] : bytes[..last];
         ReadOnlySpan<byte> seg2 = bytes[(last + 1)..];
-        var result = new byte[seg1.Length + 1 + seg2.Length];
-        seg1.CopyTo(result);
-        result[seg1.Length] = (byte)'_';
-        seg2.CopyTo(result.AsSpan(seg1.Length + 1));
-        return result;
+        var res = new NativeBuffer(seg1.Length + 1 + seg2.Length);
+        res.Append(new NativeStringView(seg1));
+        res.AppendByte((byte)'_');
+        res.Append(new NativeStringView(seg2));
+        return res.Freeze();
     }
 }

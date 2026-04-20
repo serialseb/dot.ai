@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using Dotai.Commands;
-using Dotai.Text;
+using Dotai.Native;
 using Dotai.Ui;
 
 namespace Dotai;
@@ -8,36 +8,36 @@ namespace Dotai;
 public static unsafe class Program
 {
     // Managed entry point stub — only invoked in non-AOT (test/debug) builds.
-    // In AOT, ILC replaces this with NativeMain via CustomNativeMain + UnmanagedCallersOnly.
     public static int Main() => 0;
 
     [UnmanagedCallersOnly(EntryPoint = "main")]
     public static int NativeMain(int argc, byte** argv)
     {
-        // argv is a C-style array of null-terminated UTF-8 byte*.
-        // Skip argv[0] (program name). No string is ever materialised.
-        var count = argc > 1 ? argc - 1 : 0;
-        var args = new Arg[count];
-        for (int i = 0; i < count; i++)
-            args[i] = new Arg(FastString.CloneNullTerminated(argv[i + 1]));
+        var args = new NativeList<NativeString>(argc > 1 ? argc - 1 : 0);
+        for (int i = 1; i < argc; i++)
+            args.Add(NativeString.FromNullTerminated(argv[i]));
 
-        if (args.Length == 0) return new HelpCommand().Execute(args);
+        int code = Dispatch(args.AsView());
 
-        var first = args[0].AsFast;
-        var rest  = args[1..];
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
+        return code;
+    }
 
-        if (first == "--help"u8 || first == "-h"u8)
-            return new HelpCommand().Execute(rest);
-        if (first == "init"u8)
-            return new InitCommand().Execute(rest);
-        if (first == "sync"u8)
-            return new SyncCommand().Execute(rest);
+    private static int Dispatch(NativeListView<NativeString> args)
+    {
+        if (args.Length == 0) return HelpCommand.Execute(args);
+        var first = args[0].AsView();
+        if (first == "--help"u8 || first == "-h"u8) return HelpCommand.Execute(args);
+        if (first == "init"u8) return new InitCommand().Execute(args);
+        if (first == "sync"u8) return new SyncCommand().Execute(args);
 
-        var buf = new ByteBuffer(32);
+        var buf = new NativeBuffer(64);
         buf.Append("unknown command: "u8);
-        buf.Append(first.Bytes);
-        ConsoleOut.Error(buf.Span);
-        new HelpCommand().Execute(Array.Empty<Arg>());
+        buf.Append(first);
+        ConsoleOut.Error(buf.AsView());
+        buf.Dispose();
+        HelpCommand.Execute(args);
         return 1;
     }
 }

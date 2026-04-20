@@ -1,51 +1,50 @@
-using Dotai.Text;
+using Dotai.Native;
 
 namespace Dotai.Services;
 
 public static class GitignoreWriter
 {
-    // Byte-native API used by production code.
-    public static void EnsureLine(FastString path, FastString line)
+    public static void EnsureLine(NativeStringView path, NativeStringView line)
     {
         var parent = Fs.GetDirectoryName(path);
-        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
+        if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
+        parent.Dispose();
 
         if (!Fs.Exists(path))
         {
-            // Write line + '\n'
-            var buf = new byte[line.Length + 1];
-            line.Bytes.CopyTo(buf);
-            buf[line.Length] = (byte)'\n';
-            Fs.TryWriteAllBytes(path, buf);
+            var newBuf = new NativeBuffer(line.Length + 1);
+            newBuf.Append(line);
+            newBuf.AppendByte((byte)'\n');
+            var ns = newBuf.Freeze();
+            Fs.TryWriteAllBytes(path, ns.AsView());
+            ns.Dispose();
             return;
         }
 
         if (!Fs.TryReadAllBytes(path, out var text)) return;
 
-        // Check each line for a match
-        var textSpan = text.AsSpan();
+        var textView = text.AsView();
+        var textBytes = textView.Bytes;
         int start = 0;
-        while (start <= textSpan.Length)
+        while (start <= textBytes.Length)
         {
-            int end = textSpan[start..].IndexOf((byte)'\n');
-            var lineSpan = end < 0 ? textSpan[start..] : textSpan[start..(start + end)];
-            // Trim CR
+            int end = textBytes[start..].IndexOf((byte)'\n');
+            var lineSpan = end < 0 ? textBytes[start..] : textBytes[start..(start + end)];
             if (!lineSpan.IsEmpty && lineSpan[^1] == (byte)'\r') lineSpan = lineSpan[..^1];
-            if (lineSpan.SequenceEqual(line.Bytes)) return; // already present
+            if (lineSpan.SequenceEqual(line.Bytes)) { text.Dispose(); return; }
             if (end < 0) break;
             start += end + 1;
         }
 
-        // Append: ensure trailing newline then add line + '\n'
-        bool hasTrailingNewline = text.Length > 0 && text[^1] == (byte)'\n';
-        int extra = (hasTrailingNewline ? 0 : 1) + line.Length + 1;
-        var appended = new byte[text.Length + extra];
-        text.CopyTo(appended, 0);
-        int pos = text.Length;
-        if (!hasTrailingNewline) appended[pos++] = (byte)'\n';
-        line.Bytes.CopyTo(appended.AsSpan(pos));
-        pos += line.Length;
-        appended[pos] = (byte)'\n';
-        Fs.TryWriteAllBytes(path, appended);
+        bool hasTrailingNewline = textBytes.Length > 0 && textBytes[^1] == (byte)'\n';
+        var appendBuf = new NativeBuffer(textBytes.Length + (hasTrailingNewline ? 0 : 1) + line.Length + 1);
+        appendBuf.Append(textView);
+        if (!hasTrailingNewline) appendBuf.AppendByte((byte)'\n');
+        appendBuf.Append(line);
+        appendBuf.AppendByte((byte)'\n');
+        var appended = appendBuf.Freeze();
+        text.Dispose();
+        Fs.TryWriteAllBytes(path, appended.AsView());
+        appended.Dispose();
     }
 }

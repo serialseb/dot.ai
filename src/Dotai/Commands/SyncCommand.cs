@@ -1,214 +1,286 @@
+using Dotai.Native;
 using Dotai.Services;
-using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
 
 public sealed class SyncCommand
 {
-    private readonly byte[] _startDir;
+    private readonly NativeString _startDir;
+    private SyncReport _lastReport;
+    private bool _hasLastReport;
 
-    public SyncCommand() : this(GetCwd()) { }
-    private static byte[] GetCwd() { Fs.TryGetCurrentDirectory(out var d); return d; }
-    public SyncCommand(byte[] startDir) { _startDir = startDir; }
+    public SyncCommand()
+    {
+        Fs.TryGetCurrentDirectory(out _startDir);
+    }
+
+    public SyncCommand(NativeStringView startDir)
+    {
+        _startDir = NativeString.From(startDir);
+    }
 
     public bool Silent { get; init; }
     public bool Force { get; init; }
 
-    public SyncReport? LastReport { get; private set; }
+    public bool HasLastReport => _hasLastReport;
+    public ref SyncReport LastReport => ref _lastReport;
 
-    public int Execute(Arg[] args)
+    public int Execute(NativeListView<NativeString> args)
     {
-        if (!SharedFlags.TryParse(args, _startDir, out var parsed)) return 1;
-
-        var rest = parsed.Positional;
-        var startDir = parsed.StartDir;
+        if (!SharedFlags.TryParse(args, _startDir.AsView(), out var parsed)) return 1;
         var force = parsed.Force || Force;
+        int code = ExecuteCore(parsed.StartDir.AsView(), force, Silent, ref _lastReport);
+        _hasLastReport = true;
+        parsed.Dispose();
+        return code;
+    }
 
-        if (rest.Length > 0 && rest[0].AsFast == "--help"u8)
-        {
-            ConsoleOut.Info(Help_u8);
-            return 0;
-        }
+    // Static entry-point used by InitCommand (avoids creating a SyncCommand instance).
+    public static int Execute(NativeStringView startDir, bool force, bool silent,
+        out int skillsLinked, out int filesLinked)
+    {
+        var report = new SyncReport(4);
+        int code = ExecuteCore(startDir, force, silent, ref report);
+        skillsLinked = report.SkillsLinked;
+        filesLinked = report.FilesLinked;
+        report.Dispose();
+        return code;
+    }
 
+    private static int ExecuteCore(NativeStringView startDir, bool force, bool silent, ref SyncReport report)
+    {
         if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
             return 1;
         }
 
-        if (Fs.IsDirectory(Fs.Combine(repoRoot, ".skillshare"u8)))
+        var skillshareCheck = Fs.Combine(repoRoot.AsView(), ".skillshare"u8);
+        if (Fs.IsDirectory(skillshareCheck.AsView()))
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
+        skillshareCheck.Dispose();
 
-        var configPath = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), "config.jsonc"u8);
-        if (!ConfigStore.TryLoad((FastString)configPath, out var config))
+        var aiDir = Fs.Combine(repoRoot.AsView(), ".ai"u8);
+        var configPath = Fs.Combine(aiDir.AsView(), "config.jsonc"u8);
+        aiDir.Dispose();
+        if (!ConfigStore.TryLoad(configPath.AsView(), out var config))
         {
-            if (!force) return 2;
-            config = new List<byte[]>();
-            ConfigStore.Save((FastString)configPath, config);
+            if (!force)
+            {
+                configPath.Dispose(); repoRoot.Dispose();
+                return 2;
+            }
+            config = new NativeList<NativeString>(4);
+            ConfigStore.Save(configPath.AsView(), config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
+        configPath.Dispose();
 
-        if (config.Count == 0)
+        if (config.Length == 0)
         {
+            for (int i = 0; i < config.Length; i++) config[i].Dispose();
+            config.Dispose();
+            repoRoot.Dispose();
             ConsoleOut.Error("no repositories configured (run dotai init first)"u8);
             return 1;
         }
 
-        var agentNames = AgentDetector.Detect((FastString)repoRoot);
-        var agentArgs = new Arg[agentNames.Length];
-        for (int i = 0; i < agentNames.Length; i++)
-            agentArgs[i] = new Arg(agentNames[i]);
+        var agentNames = AgentDetector.Detect(repoRoot.AsView());
 
         if (force)
         {
-            SkillLinker.ForceReset((FastString)repoRoot, agentArgs);
+            SkillLinker.ForceReset(repoRoot.AsView(), agentNames.AsView());
             ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost."u8);
         }
 
-        var report = new SyncReport();
+        report = new SyncReport(4);
 
-        for (int i = 0; i < config.Count; i++)
+        for (int i = 0; i < config.Length; i++)
         {
-            SyncOne(repoRoot, config[i], agentArgs, report);
+            SyncOne(repoRoot.AsView(), config[i].AsView(), agentNames.AsView(), ref report);
         }
 
-        LastReport = report;
+        for (int i = 0; i < config.Length; i++) config[i].Dispose();
+        config.Dispose();
 
         if (!report.Ok)
         {
             ConsoleOut.Warn("completed with issues:"u8);
-            for (int i = 0; i < report.ManualRepos.Count; i++)
+            for (int i = 0; i < report.ManualRepos.Length; i++)
             {
-                var r = report.ManualRepos[i];
-                var buf = new ByteBuffer(r.Length + 16);
+                var r = report.ManualRepos[i].AsView();
+                var buf = new NativeBuffer(r.Length + 16);
                 buf.Append("  \xe2\x80\xa2 manual: "u8);
                 buf.Append(r);
-                ConsoleOut.Detail(buf.Span);
+                ConsoleOut.Detail(buf.AsView());
+                buf.Dispose();
             }
-            for (int i = 0; i < report.Conflicts.Count; i++)
+            for (int i = 0; i < report.Conflicts.Length; i++)
             {
-                var c = report.Conflicts[i];
-                var buf = new ByteBuffer(c.Length + 18);
+                var c = report.Conflicts[i].AsView();
+                var buf = new NativeBuffer(c.Length + 18);
                 buf.Append("  \xe2\x80\xa2 conflict: "u8);
                 buf.Append(c);
-                ConsoleOut.Detail(buf.Span);
+                ConsoleOut.Detail(buf.AsView());
+                buf.Dispose();
             }
             ConsoleOut.Hint("resolve the issues above, then run 'dotai sync' again"u8);
+            for (int i = 0; i < agentNames.Length; i++) agentNames[i].Dispose();
+            agentNames.Dispose();
+            repoRoot.Dispose();
             return 3;
         }
 
-        if (!Silent)
+        if (!silent)
         {
-            var plural = config.Count == 1 ? "repository"u8 : "repositories"u8;
-            var buf = new ByteBuffer(64);
+            NativeStringView plural = config.Length == 1 ? "repository"u8 : "repositories"u8;
+            var buf = new NativeBuffer(64);
             buf.Append("synced "u8);
             buf.AppendInt(report.SkillsLinked);
             buf.Append(" skills, "u8);
             buf.AppendInt(report.FilesLinked);
             buf.Append(" files across "u8);
-            buf.AppendInt(config.Count);
+            buf.AppendInt(config.Length);
             buf.AppendByte((byte)' ');
             buf.Append(plural);
-            ConsoleOut.Success(buf.Span);
+            ConsoleOut.Success(buf.AsView());
+            buf.Dispose();
         }
+
+        for (int i = 0; i < agentNames.Length; i++) agentNames[i].Dispose();
+        agentNames.Dispose();
+        repoRoot.Dispose();
         return 0;
     }
 
-    private static readonly byte[] Help_u8 =
-        "dotai sync [standard flags] — sync all configured source repositories."u8.ToArray();
+    private static ReadOnlySpan<byte> Help_u8 =>
+        "dotai sync [standard flags] — sync all configured source repositories."u8;
 
-    private static void SyncOne(byte[] repoRoot, byte[] urlBytes, ReadOnlySpan<Arg> agents, SyncReport report)
+    private static void SyncOne(NativeStringView repoRoot, NativeStringView urlView,
+        NativeListView<NativeString> agents, ref SyncReport report)
     {
-        FastString urlFast = urlBytes;
-        var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
-        var clone = Fs.Combine(Fs.Combine(repoRoot, ".ai"u8), Fs.Combine("repositories"u8, cloneNameBytes));
+        var cloneName = GitClient.DeriveCloneName(urlView);
+        var aiDir = Fs.Combine(repoRoot, ".ai"u8);
+        var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
+        aiDir.Dispose();
+        var clone = Fs.Combine(reposDir.AsView(), cloneName.AsView());
+        cloneName.Dispose(); reposDir.Dispose();
 
-        if (!Fs.IsDirectory(Fs.Combine(clone, ".git"u8)))
+        var cloneDotGit = Fs.Combine(clone.AsView(), ".git"u8);
+        if (!Fs.IsDirectory(cloneDotGit.AsView()))
         {
-            var msg = new ByteBuffer(clone.Length + 16);
-            msg.Append(clone);
+            cloneDotGit.Dispose();
+            var msg = new NativeBuffer(clone.Length + 16);
+            msg.Append(clone.AsView());
             msg.Append(" (not cloned)"u8);
-            report.ManualRepos.Add(msg.Span.ToArray());
+            report.ManualRepos.Add(msg.Freeze());
+            clone.Dispose();
             return;
         }
+        cloneDotGit.Dispose();
 
-        if (GitClient.RebaseInProgress((FastString)clone))
+        if (GitClient.RebaseInProgress(clone.AsView()))
         {
-            var msg = new ByteBuffer(clone.Length + 24);
-            msg.Append(clone);
+            var msg = new NativeBuffer(clone.Length + 24);
+            msg.Append(clone.AsView());
             msg.Append(" (rebase in progress)"u8);
-            report.ManualRepos.Add(msg.Span.ToArray());
+            report.ManualRepos.Add(msg.Freeze());
+            clone.Dispose();
             return;
         }
 
-        var status = GitClient.StatusPorcelain((FastString)clone);
-        if (!ByteOps.IsBlank(status.StdOut))
+        var status = GitClient.StatusPorcelain(clone.AsView());
+        if (!status.StdOut.AsView().IsBlank())
         {
-            if (GitClient.AddAll((FastString)clone).ExitCode != 0
-                || GitClient.Commit((FastString)clone, (FastString)"dotai sync"u8).ExitCode != 0)
+            var addResult = GitClient.AddAll(clone.AsView());
+            addResult.Dispose();
+            var commitResult = GitClient.Commit(clone.AsView(), "dotai sync"u8);
+            if (addResult.ExitCode != 0 || commitResult.ExitCode != 0)
             {
-                var msg = new ByteBuffer(clone.Length + 20);
-                msg.Append(clone);
+                commitResult.Dispose();
+                status.Dispose();
+                var msg = new NativeBuffer(clone.Length + 20);
+                msg.Append(clone.AsView());
                 msg.Append(" (commit failed)"u8);
-                report.ManualRepos.Add(msg.Span.ToArray());
+                report.ManualRepos.Add(msg.Freeze());
+                clone.Dispose();
                 return;
             }
+            commitResult.Dispose();
         }
+        status.Dispose();
 
-        if (GitClient.Fetch((FastString)clone).ExitCode != 0)
+        var fetchResult = GitClient.Fetch(clone.AsView());
+        if (fetchResult.ExitCode != 0)
         {
-            var msg = new ByteBuffer(clone.Length + 18);
-            msg.Append(clone);
+            fetchResult.Dispose();
+            var msg = new NativeBuffer(clone.Length + 18);
+            msg.Append(clone.AsView());
             msg.Append(" (fetch failed)"u8);
-            report.ManualRepos.Add(msg.Span.ToArray());
+            report.ManualRepos.Add(msg.Freeze());
+            clone.Dispose();
             return;
         }
+        fetchResult.Dispose();
 
-        var branchBytes = GitClient.DefaultBranch((FastString)clone);
+        var branchNs = GitClient.DefaultBranch(clone.AsView());
 
-        var upstream = new ByteBuffer(32);
-        upstream.Append("origin/"u8);
-        upstream.Append(branchBytes);
-        var rebase = GitClient.Rebase((FastString)clone, (FastString)upstream.Span.ToArray());
+        var upstreamBuf = new NativeBuffer(32);
+        upstreamBuf.Append("origin/"u8);
+        upstreamBuf.Append(branchNs.AsView());
+        var upstream = upstreamBuf.Freeze();
+
+        var rebase = GitClient.Rebase(clone.AsView(), upstream.AsView());
+        upstream.Dispose();
         if (rebase.ExitCode != 0)
         {
-            var msg = new ByteBuffer(clone.Length + 48);
-            msg.Append(clone);
+            rebase.Dispose();
+            branchNs.Dispose();
+            var msg = new NativeBuffer(clone.Length + 48);
+            msg.Append(clone.AsView());
             msg.Append(" (rebase failed; resolve in .git/rebase-merge)"u8);
-            report.ManualRepos.Add(msg.Span.ToArray());
+            report.ManualRepos.Add(msg.Freeze());
+            clone.Dispose();
             return;
         }
+        rebase.Dispose();
 
-        var push = GitClient.Push((FastString)clone, (FastString)branchBytes);
+        var push = GitClient.Push(clone.AsView(), branchNs.AsView());
+        branchNs.Dispose();
         if (push.ExitCode != 0)
         {
-            var stderrTrimmed = ByteOps.Trim(push.StdErr);
-            var msg = new ByteBuffer(clone.Length + stderrTrimmed.Length + 20);
-            msg.Append(clone);
+            var stderrTrimmed = push.StdErr.AsView().Trim();
+            var msg = new NativeBuffer(clone.Length + stderrTrimmed.Length + 20);
+            msg.Append(clone.AsView());
             msg.Append(" (push failed: "u8);
             msg.Append(stderrTrimmed);
             msg.AppendByte((byte)')');
-            report.ManualRepos.Add(msg.Span.ToArray());
+            push.Dispose();
+            report.ManualRepos.Add(msg.Freeze());
+            clone.Dispose();
             return;
         }
+        push.Dispose();
 
         var skillsBefore = report.SkillsLinked;
         var filesBefore = report.FilesLinked;
-        SkillLinker.LinkSkills((FastString)repoRoot, (FastString)clone, agents, report);
-        SkillLinker.LinkFiles((FastString)repoRoot, (FastString)clone, report);
-        SkillLinker.CleanupOrphans((FastString)repoRoot, agents);
+        SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report);
+        SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report);
+        SkillLinker.CleanupOrphans(repoRoot, agents);
         var deltaSkills = report.SkillsLinked - skillsBefore;
         var deltaFiles = report.FilesLinked - filesBefore;
 
-        var msgBuf = new ByteBuffer(64);
+        var msgBuf = new NativeBuffer(64);
         msgBuf.Append("  \xe2\x80\xa2 "u8);
-        msgBuf.Append(urlBytes);
+        msgBuf.Append(urlView);
         msgBuf.Append(": "u8);
         msgBuf.AppendInt(deltaSkills);
         msgBuf.Append(" skills, "u8);
         msgBuf.AppendInt(deltaFiles);
         msgBuf.Append(" files"u8);
-        ConsoleOut.Info(msgBuf.Span);
+        ConsoleOut.Info(msgBuf.AsView());
+        msgBuf.Dispose();
+        clone.Dispose();
     }
 }

@@ -1,31 +1,33 @@
-using Dotai.Text;
+using Dotai.Native;
 
 namespace Dotai.Services;
 
 public static class RepoRootResolver
 {
-    // Byte-native API used by production code.
-    public static bool TryFind(FastString startDir, out byte[] repoRoot)
+    public static bool TryFind(NativeStringView startDir, out NativeString repoRoot)
     {
-        if (!Fs.IsDirectory(startDir)) { repoRoot = []; return false; }
+        if (!Fs.IsDirectory(startDir)) { repoRoot = default; return false; }
         var dir = Fs.GetFullPath(startDir);
-        while (dir.Length > 0)
+        while (!dir.IsEmpty)
         {
-            var dotGit = Fs.Combine(dir, ".git"u8);
-            if (Fs.Exists(dotGit)) { repoRoot = dir; return true; }
-            var parent = Fs.GetDirectoryName(dir);
-            if (parent.Length == 0 || IsSameBytes(parent, dir)) break;
+            var dotGit = Fs.Combine(dir.AsView(), ".git"u8);
+            bool exists = Fs.Exists(dotGit.AsView());
+            dotGit.Dispose();
+            if (exists) { repoRoot = dir; return true; }
+            var parent = Fs.GetDirectoryName(dir.AsView());
+            if (parent.IsEmpty || IsSame(parent.AsView(), dir.AsView()))
+            {
+                parent.Dispose();
+                break;
+            }
+            dir.Dispose();
             dir = parent;
         }
-        repoRoot = [];
+        dir.Dispose();
+        repoRoot = default;
         return false;
     }
 
-    private static bool IsSameBytes(byte[] a, byte[] b)
-    {
-        if (a.Length != b.Length) return false;
-        for (int i = 0; i < a.Length; i++)
-            if (a[i] != b[i]) return false;
-        return true;
-    }
+    private static bool IsSame(NativeStringView a, NativeStringView b)
+        => a.Bytes.SequenceEqual(b.Bytes);
 }

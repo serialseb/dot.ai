@@ -1,10 +1,29 @@
+using Dotai.Native;
 using Dotai.Services;
-using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
 
-public sealed record ParsedArgs(byte[] StartDir, bool Force, Arg[] Positional);
+public struct ParsedArgs
+{
+    public NativeString StartDir;
+    public bool Force;
+    public NativeList<NativeString> Positional;
+
+    public ParsedArgs(NativeString startDir, bool force, NativeList<NativeString> positional)
+    {
+        StartDir = startDir;
+        Force = force;
+        Positional = positional;
+    }
+
+    public void Dispose()
+    {
+        StartDir.Dispose();
+        for (int i = 0; i < Positional.Length; i++) Positional[i].Dispose();
+        Positional.Dispose();
+    }
+}
 
 public static class SharedFlags
 {
@@ -14,48 +33,53 @@ public static class SharedFlags
         ExpectingProjectPath,
     }
 
-    public static bool TryParse(Arg[] args, FastString defaultStartDir, out ParsedArgs result)
+    public static bool TryParse(NativeListView<NativeString> args, NativeStringView defaultStartDir, out ParsedArgs result)
     {
         var state = State.Normal;
-        var startDir = defaultStartDir.Bytes.ToArray();
+        var startDir = NativeString.From(defaultStartDir);
         var force = false;
-        var positional = new List<Arg>();
+        var positional = new NativeList<NativeString>(args.Length > 0 ? args.Length : 4);
 
         for (int ti = 0; ti < args.Length; ti++)
         {
-            var token = args[ti];
+            var token = args[ti].AsView();
             switch (state)
             {
                 case State.Normal:
-                    if (token.AsFast == "-p"u8 || token.AsFast == "--project"u8)
+                    if (token == "-p"u8 || token == "--project"u8)
                     {
                         state = State.ExpectingProjectPath;
                     }
-                    else if (token.AsFast == "-f"u8 || token.AsFast == "--force"u8)
+                    else if (token == "-f"u8 || token == "--force"u8)
                     {
                         force = true;
                     }
                     else if (IsHelpToken(token))
                     {
-                        positional.Add(token);
+                        positional.Add(NativeString.From(token));
                     }
                     else if (IsFlagToken(token))
                     {
-                        var buf = new ByteBuffer(token.Data.Length + 16);
+                        var buf = new NativeBuffer(token.Length + 16);
                         buf.Append("unknown flag: "u8);
-                        buf.Append(token.Data);
-                        ConsoleOut.Error(buf.Span);
-                        result = new ParsedArgs(startDir, force, Array.Empty<Arg>());
+                        buf.Append(token);
+                        ConsoleOut.Error(buf.AsView());
+                        buf.Dispose();
+                        for (int i = 0; i < positional.Length; i++) positional[i].Dispose();
+                        positional.Dispose();
+                        startDir.Dispose();
+                        result = default;
                         return false;
                     }
                     else
                     {
-                        positional.Add(token);
+                        positional.Add(NativeString.From(token));
                     }
                     break;
 
                 case State.ExpectingProjectPath:
-                    startDir = Fs.GetFullPath(token.AsFast);
+                    startDir.Dispose();
+                    startDir = Fs.GetFullPath(token);
                     state = State.Normal;
                     break;
             }
@@ -64,17 +88,20 @@ public static class SharedFlags
         if (state == State.ExpectingProjectPath)
         {
             ConsoleOut.Error("-p requires a path argument"u8);
-            result = new ParsedArgs(startDir, force, Array.Empty<Arg>());
+            for (int i = 0; i < positional.Length; i++) positional[i].Dispose();
+            positional.Dispose();
+            startDir.Dispose();
+            result = default;
             return false;
         }
 
-        result = new ParsedArgs(startDir, force, positional.ToArray());
+        result = new ParsedArgs(startDir, force, positional);
         return true;
     }
 
-    private static bool IsHelpToken(Arg t)
-        => t.AsFast == "--help"u8 || t.AsFast == "-h"u8;
+    private static bool IsHelpToken(NativeStringView t)
+        => t == "--help"u8 || t == "-h"u8;
 
-    private static bool IsFlagToken(Arg t)
-        => t.Data.Length > 0 && t.Data[0] == (byte)'-';
+    private static bool IsFlagToken(NativeStringView t)
+        => t.Length > 0 && t[0] == (byte)'-';
 }

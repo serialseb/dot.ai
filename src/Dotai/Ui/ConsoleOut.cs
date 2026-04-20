@@ -1,3 +1,5 @@
+using Dotai.Native;
+
 namespace Dotai.Ui;
 
 public static class ConsoleOut
@@ -5,13 +7,13 @@ public static class ConsoleOut
     private const int Stdout = 1;
     private const int Stderr = 2;
 
-    public static void Info(ReadOnlySpan<byte> msg)
+    public static void Info(NativeStringView msg)
     {
         Stdio.Write(Stdout, msg);
         Stdio.Write(Stdout, "\n"u8);
     }
 
-    public static void Success(ReadOnlySpan<byte> msg)
+    public static void Success(NativeStringView msg)
     {
         if (Stdio.IsTty(Stdout))
         {
@@ -27,7 +29,7 @@ public static class ConsoleOut
         }
     }
 
-    public static void Hint(ReadOnlySpan<byte> msg)
+    public static void Hint(NativeStringView msg)
     {
         if (Stdio.IsTty(Stdout))
         {
@@ -43,7 +45,7 @@ public static class ConsoleOut
         }
     }
 
-    public static void Warn(ReadOnlySpan<byte> msg)
+    public static void Warn(NativeStringView msg)
     {
         if (Stdio.IsTty(Stderr))
         {
@@ -59,7 +61,7 @@ public static class ConsoleOut
         }
     }
 
-    public static void Error(ReadOnlySpan<byte> msg)
+    public static void Error(NativeStringView msg)
     {
         if (Stdio.IsTty(Stderr))
         {
@@ -75,7 +77,7 @@ public static class ConsoleOut
         }
     }
 
-    public static void Detail(ReadOnlySpan<byte> msg)
+    public static void Detail(NativeStringView msg)
     {
         Stdio.Write(Stderr, msg);
         Stdio.Write(Stderr, "\n"u8);

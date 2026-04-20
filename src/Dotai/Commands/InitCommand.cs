@@ -1,161 +1,198 @@
+using Dotai.Native;
 using Dotai.Services;
-using Dotai.Text;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
 
 public sealed class InitCommand
 {
-    private readonly byte[] _startDir;
+    private readonly NativeString _startDir;
 
-    public InitCommand() : this(GetCwd()) { }
-    private static byte[] GetCwd() { Fs.TryGetCurrentDirectory(out var d); return d; }
-    public InitCommand(byte[] startDir) { _startDir = startDir; }
-
-    // TEST-SEAM: tests pass a pre-encoded byte[] URL override.
-    public byte[]? CloneUrlOverride { get; init; }
-
-    public int Execute(Arg[] args)
+    public InitCommand()
     {
-        if (!SharedFlags.TryParse(args, _startDir, out var parsed)) return 1;
+        Fs.TryGetCurrentDirectory(out _startDir);
+    }
 
-        var rest = parsed.Positional;
-        var startDir = parsed.StartDir;
+    public InitCommand(NativeStringView startDir)
+    {
+        _startDir = NativeString.From(startDir);
+    }
 
-        if (rest.Length == 0)
+    // TEST-SEAM: tests pass a pre-encoded URL override (as NativeString — caller owns, we copy).
+    public NativeString CloneUrlOverride { get; init; }
+
+    public int Execute(NativeListView<NativeString> args)
+    {
+        if (!SharedFlags.TryParse(args, _startDir.AsView(), out var parsed)) return 1;
+
+        var positional = parsed.Positional;
+        var startDir = parsed.StartDir.AsView();
+
+        if (positional.Length == 0)
         {
             ConsoleOut.Info(Help_u8);
+            parsed.Dispose();
             return 1;
         }
-        if (rest[0].AsFast == "--help"u8)
+        if (positional[0].AsView() == "--help"u8)
         {
             ConsoleOut.Info(Help_u8);
+            parsed.Dispose();
             return 0;
         }
 
-        var arg = rest[0];
-        if (!IsValidOwnerRepo(arg.Data))
+        var arg = positional[0].AsView();
+        if (!IsValidOwnerRepo(arg))
         {
-            var buf = new ByteBuffer(64);
+            var buf = new NativeBuffer(64);
             buf.Append("invalid argument: '"u8);
-            buf.Append(arg.Data);
+            buf.Append(arg);
             buf.Append("' (expected <owner>/<repo>)"u8);
-            ConsoleOut.Error(buf.Span);
+            ConsoleOut.Error(buf.AsView());
+            buf.Dispose();
+            parsed.Dispose();
             return 1;
         }
 
         if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
+            parsed.Dispose();
             return 1;
         }
 
-        if (Fs.IsDirectory(Fs.Combine(repoRoot, ".skillshare"u8)))
+        var skillshareCheck = Fs.Combine(repoRoot.AsView(), ".skillshare"u8);
+        if (Fs.IsDirectory(skillshareCheck.AsView()))
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
+        skillshareCheck.Dispose();
 
         // Split <owner>/<repo> on '/'
-        int slash = arg.Data.AsSpan().IndexOf((byte)'/');
-        var ownerBytes = arg.Data.AsSpan(0, slash).ToArray();
-        var repoBytes  = arg.Data.AsSpan(slash + 1).ToArray();
+        int slash = arg.IndexOf((byte)'/');
+        var ownerBytes = arg.Slice(0, slash);
+        var repoBytes = arg.Slice(slash + 1);
 
-        byte[] urlBytes;
-        if (CloneUrlOverride != null)
+        NativeString urlNs;
+        if (!CloneUrlOverride.IsEmpty)
         {
-            urlBytes = CloneUrlOverride;
+            urlNs = NativeString.From(CloneUrlOverride.AsView());
         }
         else
         {
-            var urlBuf = new ByteBuffer(32 + ownerBytes.Length + repoBytes.Length);
+            var urlBuf = new NativeBuffer(32 + ownerBytes.Length + repoBytes.Length);
             urlBuf.Append("https://github.com/"u8);
             urlBuf.Append(ownerBytes);
             urlBuf.AppendByte((byte)'/');
             urlBuf.Append(repoBytes);
-            urlBytes = urlBuf.Span.ToArray();
+            urlNs = urlBuf.Freeze();
         }
 
-        FastString urlFast = urlBytes;
-        var cloneNameBytes = GitClient.DeriveCloneName(urlFast);
+        var cloneName = GitClient.DeriveCloneName(urlNs.AsView());
 
-        var aiDir = Fs.Combine(repoRoot, ".ai"u8);
-        var reposDir = Fs.Combine(aiDir, "repositories"u8);
-        Fs.TryCreateDirectory(reposDir);
+        var aiDir = Fs.Combine(repoRoot.AsView(), ".ai"u8);
+        var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
+        Fs.TryCreateDirectory(reposDir.AsView());
 
-        GitignoreWriter.EnsureLine(
-            (FastString)Fs.Combine(aiDir, ".gitignore"u8),
-            "repositories/"u8);
+        var gitignorePath = Fs.Combine(aiDir.AsView(), ".gitignore"u8);
+        GitignoreWriter.EnsureLine(gitignorePath.AsView(), "repositories/"u8);
+        gitignorePath.Dispose();
 
-        var configPath = Fs.Combine(aiDir, "config.jsonc"u8);
-        if (!ConfigStore.TryLoad((FastString)configPath, out var config))
+        var configPath = Fs.Combine(aiDir.AsView(), "config.jsonc"u8);
+        if (!ConfigStore.TryLoad(configPath.AsView(), out var config))
         {
-            if (!parsed.Force) return 2;
-            config = new List<byte[]>();
-            ConfigStore.Save((FastString)configPath, config);
+            if (!parsed.Force)
+            {
+                urlNs.Dispose(); cloneName.Dispose(); aiDir.Dispose(); reposDir.Dispose();
+                configPath.Dispose(); repoRoot.Dispose(); parsed.Dispose();
+                return 2;
+            }
+            config = new NativeList<NativeString>(4);
+            ConfigStore.Save(configPath.AsView(), config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
         }
 
-        var alreadyRegistered = ContainsUrl(config, urlFast);
+        var alreadyRegistered = ContainsUrl(config, urlNs.AsView());
         if (alreadyRegistered)
         {
-            var buf = new ByteBuffer(64);
+            var buf = new NativeBuffer(64);
             buf.Append("repository already registered: "u8);
-            buf.Append(urlBytes);
-            ConsoleOut.Hint(buf.Span);
+            buf.Append(urlNs.AsView());
+            ConsoleOut.Hint(buf.AsView());
+            buf.Dispose();
         }
-        ConfigStore.AddRepo(config, urlFast);
-        ConfigStore.Save((FastString)configPath, config);
+        ConfigStore.AddRepo(ref config, urlNs.AsView());
+        ConfigStore.Save(configPath.AsView(), config);
+        configPath.Dispose();
+        for (int i = 0; i < config.Length; i++) config[i].Dispose();
+        config.Dispose();
 
-        var cloneDir = Fs.Combine(reposDir, cloneNameBytes);
-        if (!Fs.IsDirectory(Fs.Combine(cloneDir, ".git"u8)))
+        var cloneDir = Fs.Combine(reposDir.AsView(), cloneName.AsView());
+        cloneName.Dispose(); reposDir.Dispose(); aiDir.Dispose();
+
+        var cloneDotGit = Fs.Combine(cloneDir.AsView(), ".git"u8);
+        if (!Fs.IsDirectory(cloneDotGit.AsView()))
         {
-            var result = GitClient.Clone(urlFast, (FastString)cloneDir);
+            cloneDotGit.Dispose();
+            var result = GitClient.Clone(urlNs.AsView(), cloneDir.AsView());
             if (result.ExitCode != 0)
             {
-                var stderrTrimmed = ByteOps.Trim(result.StdErr);
-                var buf = new ByteBuffer(64);
+                var stderrTrimmed = result.StdErr.AsView().Trim();
+                var buf = new NativeBuffer(64);
                 buf.Append("git clone failed: "u8);
                 buf.Append(stderrTrimmed);
-                ConsoleOut.Error(buf.Span);
+                ConsoleOut.Error(buf.AsView());
+                buf.Dispose();
+                result.Dispose();
+                urlNs.Dispose(); cloneDir.Dispose(); repoRoot.Dispose(); parsed.Dispose();
                 return 2;
             }
-            var clonedBuf = new ByteBuffer(64);
+            var clonedBuf = new NativeBuffer(64);
             clonedBuf.Append("cloned "u8);
-            clonedBuf.Append(urlBytes);
-            ConsoleOut.Info(clonedBuf.Span);
+            clonedBuf.Append(urlNs.AsView());
+            ConsoleOut.Info(clonedBuf.AsView());
+            clonedBuf.Dispose();
+            result.Dispose();
         }
+        else
+        {
+            cloneDotGit.Dispose();
+        }
+
+        urlNs.Dispose();
 
         Robot.ShowIfTty();
 
-        var sync = new SyncCommand(parsed.StartDir) { Silent = true, Force = parsed.Force };
-        var syncCode = sync.Execute(Array.Empty<Arg>());
+        var syncCode = SyncCommand.Execute(parsed.StartDir.AsView(), parsed.Force, silent: true,
+            out int skills, out int files);
         if (syncCode == 0)
         {
-            var report = sync.LastReport;
-            var skills = report?.SkillsLinked ?? 0;
-            var files = report?.FilesLinked ?? 0;
-            var buf = new ByteBuffer(128);
+            var buf = new NativeBuffer(128);
             buf.Append("registered "u8);
-            buf.Append(urlBytes);
+            buf.Append(cloneDir.AsView());
             buf.Append(": "u8);
             buf.AppendInt(skills);
             buf.Append(" skills, "u8);
             buf.AppendInt(files);
             buf.Append(" files synced"u8);
-            ConsoleOut.Success(buf.Span);
+            ConsoleOut.Success(buf.AsView());
+            buf.Dispose();
         }
+        cloneDir.Dispose();
+        repoRoot.Dispose();
+        parsed.Dispose();
         return syncCode;
     }
 
-    private static bool ContainsUrl(List<byte[]> config, FastString url)
+    private static bool ContainsUrl(NativeList<NativeString> config, NativeStringView url)
     {
-        for (int i = 0; i < config.Count; i++)
-            if (url == new FastString(config[i])) return true;
+        for (int i = 0; i < config.Length; i++)
+            if (config[i].AsView() == url) return true;
         return false;
     }
 
-    private static readonly byte[] Help_u8 =
-        "dotai init [standard flags] <owner>/<repo> — register a source repository and sync."u8.ToArray();
+    private static ReadOnlySpan<byte> Help_u8 =>
+        "dotai init [standard flags] <owner>/<repo> — register a source repository and sync."u8;
 
-    private static bool IsValidOwnerRepo(byte[] data)
+    private static bool IsValidOwnerRepo(NativeStringView data)
     {
         if (data.Length == 0) return false;
         int slashCount = 0;

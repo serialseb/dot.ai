@@ -1,107 +1,152 @@
 using System.Text;
 using Dotai.Commands;
-using Dotai.Text;
+using Dotai.Native;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class SharedFlagsTests
 {
-    private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
-    private static Arg A(string s) => new Arg(B(s));
-    private static Arg[] Args(params string[] ss) { var r = new Arg[ss.Length]; for (int i = 0; i < ss.Length; i++) r[i] = A(ss[i]); return r; }
+    private static NativeStringView V(string s) => Encoding.UTF8.GetBytes(s);
+
+    private static NativeList<NativeString> Args(params string[] ss)
+    {
+        var r = new NativeList<NativeString>(ss.Length > 0 ? ss.Length : 1);
+        for (int i = 0; i < ss.Length; i++) r.Add(NativeString.From(V(ss[i])));
+        return r;
+    }
 
     [Fact]
     public void NoFlagsReturnsDefaultStartDirAndPositional()
     {
-        var ok = SharedFlags.TryParse(Args("owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
 
         Assert.True(ok);
-        Assert.Equal(B("/default"), r.StartDir);
-        Assert.Equal(new[] { A("owner/repo").Data }, r.Positional.Select(a => a.Data).ToArray(), ArraySegmentComparer.Instance);
+        Assert.True(r.StartDir.AsView() == V("/default"));
+        Assert.Equal(1, r.Positional.Length);
+        Assert.True(r.Positional[0].AsView() == V("owner/repo"));
+
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void DashPConsumesPathAndStrips()
     {
-        var ok = SharedFlags.TryParse(Args("-p", "/tmp/foo", "owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("-p", "/tmp/foo", "owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
 
         Assert.True(ok);
-        Assert.Equal(B("/tmp/foo"), r.StartDir);
-        Assert.Equal(new[] { A("owner/repo").Data }, r.Positional.Select(a => a.Data).ToArray(), ArraySegmentComparer.Instance);
+        Assert.True(r.StartDir.AsView() == V("/tmp/foo"));
+        Assert.Equal(1, r.Positional.Length);
+        Assert.True(r.Positional[0].AsView() == V("owner/repo"));
+
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void LongFormProjectIsEquivalent()
     {
-        var ok = SharedFlags.TryParse(Args("--project", "/tmp/foo", "owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("--project", "/tmp/foo", "owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
 
         Assert.True(ok);
-        Assert.Equal(B("/tmp/foo"), r.StartDir);
+        Assert.True(r.StartDir.AsView() == V("/tmp/foo"));
+
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void DashPWithoutValueReturnsFalse()
     {
-        var ok = SharedFlags.TryParse(Args("-p"), (FastString)B("/default"), out _);
+        var args = Args("-p");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out _);
         Assert.False(ok);
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void UnknownFlagReturnsFalse()
     {
-        var ok = SharedFlags.TryParse(Args("--foo"), (FastString)B("/default"), out _);
+        var args = Args("--foo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out _);
         Assert.False(ok);
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void HelpFlagIsPreservedAsPositional()
     {
-        var ok = SharedFlags.TryParse(Args("--help"), (FastString)B("/default"), out var r);
+        var args = Args("--help");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
 
         Assert.True(ok);
-        Assert.Contains(r.Positional, a => a.AsFast.Equals((FastString)"--help"u8));
+        bool found = false;
+        for (int i = 0; i < r.Positional.Length; i++)
+            if (r.Positional[i].AsView() == "--help"u8) { found = true; break; }
+        Assert.True(found);
+
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void RelativePathIsResolvedAgainstCwd()
     {
         var cwd = Encoding.UTF8.GetBytes(Directory.GetCurrentDirectory());
-        var ok = SharedFlags.TryParse(Args("-p", "."), (FastString)B("/default"), out var r);
+        var args = Args("-p", ".");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
 
         Assert.True(ok);
-        Assert.Equal(cwd, r.StartDir);
+        Assert.True(r.StartDir.AsView() == (NativeStringView)cwd);
+
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void DashFSetsForce()
     {
-        var ok = SharedFlags.TryParse(Args("-f", "owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("-f", "owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
         Assert.True(ok);
         Assert.True(r.Force);
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void LongFormForceIsEquivalent()
     {
-        var ok = SharedFlags.TryParse(Args("--force", "owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("--force", "owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
         Assert.True(ok);
         Assert.True(r.Force);
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 
     [Fact]
     public void NoForceDefaultsFalse()
     {
-        var ok = SharedFlags.TryParse(Args("owner/repo"), (FastString)B("/default"), out var r);
+        var args = Args("owner/repo");
+        var ok = SharedFlags.TryParse(args.AsView(), V("/default"), out var r);
         Assert.True(ok);
         Assert.False(r.Force);
-    }
-
-    // Comparer for Assert.Equal on byte[][] sequences
-    private sealed class ArraySegmentComparer : IEqualityComparer<byte[]>
-    {
-        public static readonly ArraySegmentComparer Instance = new();
-        public bool Equals(byte[]? x, byte[]? y) => x.AsSpan().SequenceEqual(y);
-        public int GetHashCode(byte[] obj) => obj.Length;
+        r.Dispose();
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
     }
 }

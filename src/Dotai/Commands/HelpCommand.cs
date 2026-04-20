@@ -1,11 +1,11 @@
-using Dotai.Text;
+using Dotai.Native;
 using Dotai.Ui;
 
 namespace Dotai.Commands;
 
-public sealed class HelpCommand
+public static class HelpCommand
 {
-    public int Execute(Arg[] args)
+    public static int Execute(NativeListView<NativeString> args)
     {
         ConsoleOut.Info("""
             dotai — share AI skills and files across projects via symlinks 🤖

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Dotai.Text;
+using Dotai.Native;
 using Dotai.Ui;
 
 namespace Dotai.Services;
@@ -12,115 +12,116 @@ public static class ConfigStore
         AllowTrailingCommas = true,
     };
 
-    // Byte-native API used by production code.
-    public static bool TryLoad(FastString path, out List<byte[]> config)
+    public static bool TryLoad(NativeStringView path, out NativeList<NativeString> config)
     {
         if (!Fs.Exists(path))
         {
-            config = new List<byte[]>();
+            config = new NativeList<NativeString>(4);
             return true;
         }
 
         if (!Fs.TryReadAllBytes(path, out var bytes))
         {
-            config = new List<byte[]>();
+            config = new NativeList<NativeString>(0);
             return false;
         }
-        var reader = new Utf8JsonReader(bytes, ReadOptions);
+
+        var result = new NativeList<NativeString>(4);
+        var reader = new Utf8JsonReader(bytes.AsView().Bytes, ReadOptions);
 
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
         {
             EmitMalformedError(path);
-            config = new List<byte[]>();
+            bytes.Dispose();
+            config = new NativeList<NativeString>(0);
             return false;
         }
 
-        var result = new List<byte[]>();
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject) break;
             if (reader.TokenType != JsonTokenType.PropertyName)
             {
                 EmitMalformedError(path);
-                config = new List<byte[]>();
+                bytes.Dispose();
+                for (int i = 0; i < result.Length; i++) result[i].Dispose();
+                result.Dispose();
+                config = new NativeList<NativeString>(0);
                 return false;
             }
 
-            byte[] keyBytes;
+            NativeString keyNs;
             if (reader.HasValueSequence)
             {
                 var seq = reader.ValueSequence;
-                keyBytes = new byte[(int)seq.Length];
-                int seqPos = 0;
-                var seqSegs = seq.GetEnumerator();
-                while (seqSegs.MoveNext())
-                {
-                    seqSegs.Current.Span.CopyTo(keyBytes.AsSpan(seqPos));
-                    seqPos += seqSegs.Current.Length;
-                }
+                var keyBuf = new NativeBuffer((int)seq.Length);
+                var seqEnum = seq.GetEnumerator();
+                while (seqEnum.MoveNext())
+                    keyBuf.Append(new NativeStringView(seqEnum.Current.Span));
+                keyNs = keyBuf.Freeze();
             }
             else
             {
-                keyBytes = reader.ValueSpan.ToArray();
+                keyNs = NativeString.From(new NativeStringView(reader.ValueSpan));
             }
 
             if (!reader.Read())
             {
                 EmitMalformedError(path);
-                config = new List<byte[]>();
+                keyNs.Dispose();
+                bytes.Dispose();
+                for (int i = 0; i < result.Length; i++) result[i].Dispose();
+                result.Dispose();
+                config = new NativeList<NativeString>(0);
                 return false;
             }
 
             SkipValue(ref reader);
-            result.Add(keyBytes);
+            result.Add(keyNs);
         }
 
+        bytes.Dispose();
         config = result;
         return true;
     }
 
-    public static void AddRepo(List<byte[]> config, FastString uri)
+    public static void AddRepo(ref NativeList<NativeString> config, NativeStringView uri)
     {
-        if (ContainsBytes(config, uri)) return;
-        config.Add(uri.Bytes.ToArray());
+        for (int i = 0; i < config.Length; i++)
+            if (config[i].AsView() == uri) return;
+        config.Add(NativeString.From(uri));
     }
 
-    // Byte-native API used by production code.
-    public static void Save(FastString path, List<byte[]> config)
+    public static void Save(NativeStringView path, NativeList<NativeString> config)
     {
         var parent = Fs.GetDirectoryName(path);
-        if (parent.Length > 0) Fs.TryCreateDirectory(parent);
+        if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
+        parent.Dispose();
 
         using var stream = new MemoryStream();
         var writerOptions = new JsonWriterOptions { Indented = true };
         using (var writer = new Utf8JsonWriter(stream, writerOptions))
         {
             writer.WriteStartObject();
-            for (int i = 0; i < config.Count; i++)
+            for (int i = 0; i < config.Length; i++)
             {
-                writer.WritePropertyName(config[i].AsSpan());
+                writer.WritePropertyName(config[i].AsView().Bytes);
                 writer.WriteStartObject();
                 writer.WriteEndObject();
             }
             writer.WriteEndObject();
         }
-        Fs.TryWriteAllBytes(path, stream.ToArray());
+        Fs.TryWriteAllBytes(path, new NativeStringView(stream.ToArray()));
     }
 
-    private static void EmitMalformedError(FastString path)
+    private static void EmitMalformedError(NativeStringView path)
     {
-        var buf = new ByteBuffer(path.Bytes.Length + 64);
+        var buf = new NativeBuffer(path.Length + 64);
         buf.Append("config at "u8);
-        buf.Append(path.Bytes);
+        buf.Append(path);
         buf.Append(" is malformed. Fix it, or rerun with --force."u8);
-        ConsoleOut.Error(buf.Span);
-    }
-
-    private static bool ContainsBytes(List<byte[]> list, FastString candidate)
-    {
-        for (int i = 0; i < list.Count; i++)
-            if (candidate == new FastString(list[i])) return true;
-        return false;
+        ConsoleOut.Error(buf.AsView());
+        buf.Dispose();
     }
 
     private static void SkipValue(ref Utf8JsonReader reader)

@@ -1,13 +1,14 @@
 using System.Text;
+using Dotai.Native;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
-using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class RepoRootResolverTests
 {
+    private static NativeStringView V(string s) => Encoding.UTF8.GetBytes(s);
     private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
 
     [Fact]
@@ -16,10 +17,11 @@ public class RepoRootResolverTests
         using var tmp = new TempDir();
         Directory.CreateDirectory(Path.Combine(tmp.Path, ".git"));
 
-        var found = RepoRootResolver.TryFind((FastString)B(tmp.Path), out var root);
+        var found = RepoRootResolver.TryFind(V(tmp.Path), out var root);
 
         Assert.True(found);
-        Assert.Equal(B(tmp.Path), root);
+        Assert.True(root.AsView() == V(tmp.Path));
+        root.Dispose();
     }
 
     [Fact]
@@ -30,10 +32,11 @@ public class RepoRootResolverTests
         var sub = Path.Combine(tmp.Path, "a", "b", "c");
         Directory.CreateDirectory(sub);
 
-        var found = RepoRootResolver.TryFind((FastString)B(sub), out var root);
+        var found = RepoRootResolver.TryFind(V(sub), out var root);
 
         Assert.True(found);
-        Assert.Equal(B(tmp.Path), root);
+        Assert.True(root.AsView() == V(tmp.Path));
+        root.Dispose();
     }
 
     [Fact]
@@ -41,18 +44,19 @@ public class RepoRootResolverTests
     {
         using var tmp = new TempDir();
 
-        var found = RepoRootResolver.TryFind((FastString)B(tmp.Path), out _);
+        var found = RepoRootResolver.TryFind(V(tmp.Path), out var root);
 
         Assert.False(found);
+        root.Dispose();
     }
 
     [Fact]
     public void ReturnsNullForNonExistentDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "dotai-tests-" + Guid.NewGuid().ToString("N"));
-        // deliberately NOT created
-        var found = RepoRootResolver.TryFind((FastString)B(path), out _);
+        var found = RepoRootResolver.TryFind(V(path), out var root);
         Assert.False(found);
+        root.Dispose();
     }
 
     [Fact]
@@ -61,9 +65,10 @@ public class RepoRootResolverTests
         using var tmp = new TempDir();
         File.WriteAllText(Path.Combine(tmp.Path, ".git"), "gitdir: /elsewhere");
 
-        var found = RepoRootResolver.TryFind((FastString)B(tmp.Path), out var root);
+        var found = RepoRootResolver.TryFind(V(tmp.Path), out var root);
 
         Assert.True(found);
-        Assert.Equal(B(tmp.Path), root);
+        Assert.True(root.AsView() == V(tmp.Path));
+        root.Dispose();
     }
 }

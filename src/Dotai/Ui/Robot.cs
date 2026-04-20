@@ -4,7 +4,7 @@ namespace Dotai.Ui;
 
 public static class Robot
 {
-    private static readonly byte[] Art = """
+    private static ReadOnlySpan<byte> Art => """
            [■_■]
           /|___|\
          /_|   |_\
@@ -14,7 +14,7 @@ public static class Robot
          /      \
         /________\
 
-        """u8.ToArray();
+        """u8;
 
     private static ReadOnlySpan<byte> ClearScreen => "\x1b[2J\x1b[H"u8;
 

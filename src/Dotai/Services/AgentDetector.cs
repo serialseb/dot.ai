@@ -1,31 +1,24 @@
-using Dotai.Text;
+using Dotai.Native;
 
 namespace Dotai.Services;
 
 public static class AgentDetector
 {
-    private static readonly byte[][] Known =
-    [
-        ".claude"u8.ToArray(),
-        ".codex"u8.ToArray(),
-        ".opencode"u8.ToArray(),
-    ];
-
-    // Byte-native API used by production code.
-    public static byte[][] Detect(FastString repoRoot)
+    public static NativeList<NativeString> Detect(NativeStringView repoRoot)
     {
-        var count = 0;
-        var present = new byte[Known.Length][];
-        for (int i = 0; i < Known.Length; i++)
-        {
-            if (Fs.IsDirectory(Fs.Combine(repoRoot, Known[i])))
-                present[count++] = Known[i];
-        }
-        if (count == Known.Length) return present;
-        var trimmed = new byte[count][];
-        Array.Copy(present, trimmed, count);
-        return trimmed;
+        var result = new NativeList<NativeString>(3);
+        Check(repoRoot, ".claude"u8, ref result);
+        Check(repoRoot, ".codex"u8, ref result);
+        Check(repoRoot, ".opencode"u8, ref result);
+        return result;
     }
 
-
+    private static void Check(NativeStringView repoRoot, ReadOnlySpan<byte> name, ref NativeList<NativeString> result)
+    {
+        NativeStringView nameView = name;
+        var combined = Fs.Combine(repoRoot, nameView);
+        if (Fs.IsDirectory(combined.AsView()))
+            result.Add(NativeString.From(nameView));
+        combined.Dispose();
+    }
 }

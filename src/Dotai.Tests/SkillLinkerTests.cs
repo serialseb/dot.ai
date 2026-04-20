@@ -1,18 +1,20 @@
 using System.Text;
+using Dotai.Native;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
-using Dotai.Text;
 using Xunit;
 
 namespace Dotai.Tests;
 
 public class SkillLinkerTests
 {
-    private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
-    private static Arg[] Agents(params string[] names)
+    private static NativeStringView V(string s) => Encoding.UTF8.GetBytes(s);
+
+    private static NativeList<NativeString> Agents(params string[] names)
     {
-        var result = new Arg[names.Length];
-        for (int i = 0; i < names.Length; i++) result[i] = new Arg(B(names[i]));
+        var result = new NativeList<NativeString>(names.Length > 0 ? names.Length : 1);
+        for (int i = 0; i < names.Length; i++)
+            result.Add(NativeString.From(V(names[i])));
         return result;
     }
 
@@ -34,13 +36,17 @@ public class SkillLinkerTests
             Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
             File.WriteAllText(Path.Combine(c, "skills", "alpha", "SKILL.md"), "hello");
         });
-        var report = new SyncReport();
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
 
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(clone), Agents(".claude"), report);
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
 
         var link = Path.Combine(tmp.Path, ".claude", "skills", "alpha");
         Assert.True(Directory.Exists(link));
         Assert.NotNull(new FileInfo(link).LinkTarget);
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -53,14 +59,15 @@ public class SkillLinkerTests
             Directory.CreateDirectory(nested);
             File.WriteAllText(Path.Combine(nested, "app.yaml"), "x: 1");
         });
-        var report = new SyncReport();
+        var report = new SyncReport(4);
 
-        SkillLinker.LinkFiles((FastString)B(tmp.Path), (FastString)B(clone), report);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report);
 
         var link = Path.Combine(tmp.Path, "config", "app.yaml");
         var info = new FileInfo(link);
         Assert.True(info.Exists);
         Assert.NotNull(info.LinkTarget);
+        report.Dispose();
     }
 
     [Fact]
@@ -76,14 +83,18 @@ public class SkillLinkerTests
         {
             Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
         });
-        var report = new SyncReport();
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
 
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(cloneA), Agents(".claude"), report);
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(cloneB), Agents(".claude"), report);
+        SkillLinker.LinkSkills(V(tmp.Path), V(cloneA), agents.AsView(), ref report);
+        SkillLinker.LinkSkills(V(tmp.Path), V(cloneB), agents.AsView(), ref report);
 
-        Assert.NotEmpty(report.Conflicts);
+        Assert.True(report.Conflicts.Length > 0);
         var link = new FileInfo(Path.Combine(tmp.Path, ".claude", "skills", "alpha"));
         Assert.Contains(cloneA, link.LinkTarget);
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -95,13 +106,17 @@ public class SkillLinkerTests
         {
             Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
         });
-        var report = new SyncReport();
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(clone), Agents(".claude"), report);
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
+        report.Dispose();
 
         Directory.Delete(Path.Combine(clone, "skills", "alpha"), recursive: true);
-        SkillLinker.CleanupOrphans((FastString)B(tmp.Path), Agents(".claude"));
+        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView());
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, ".claude", "skills", "alpha")));
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -114,10 +129,13 @@ public class SkillLinkerTests
         Directory.CreateDirectory(userTarget);
         File.CreateSymbolicLink(Path.Combine(agent, "user"), userTarget);
         Directory.Delete(userTarget, recursive: true);
+        var agents = Agents(".claude");
 
-        SkillLinker.CleanupOrphans((FastString)B(tmp.Path), Agents(".claude"));
+        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView());
 
         Assert.True(new FileInfo(Path.Combine(agent, "user")).LinkTarget != null);
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -130,11 +148,15 @@ public class SkillLinkerTests
             Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
             Directory.CreateDirectory(Path.Combine(c, "skills", "beta"));
         });
-        var report = new SyncReport();
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
 
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(clone), Agents(".claude"), report);
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
 
         Assert.Equal(2, report.SkillsLinked);
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -149,11 +171,12 @@ public class SkillLinkerTests
             Directory.CreateDirectory(Path.Combine(files, "sub"));
             File.WriteAllText(Path.Combine(files, "sub", "two.txt"), "2");
         });
-        var report = new SyncReport();
+        var report = new SyncReport(4);
 
-        SkillLinker.LinkFiles((FastString)B(tmp.Path), (FastString)B(clone), report);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report);
 
         Assert.Equal(2, report.FilesLinked);
+        report.Dispose();
     }
 
     [Fact]
@@ -165,12 +188,16 @@ public class SkillLinkerTests
         {
             Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
         });
-        var report = new SyncReport();
-        SkillLinker.LinkSkills((FastString)B(tmp.Path), (FastString)B(clone), Agents(".claude"), report);
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
+        report.Dispose();
 
-        SkillLinker.ForceReset((FastString)B(tmp.Path), Agents(".claude"));
+        SkillLinker.ForceReset(V(tmp.Path), agents.AsView());
 
         Assert.False(Directory.Exists(Path.Combine(tmp.Path, ".claude", "skills", "alpha")));
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -182,10 +209,13 @@ public class SkillLinkerTests
         var userTarget = Path.Combine(tmp.Path, "user-skill");
         Directory.CreateDirectory(userTarget);
         File.CreateSymbolicLink(Path.Combine(agent, "user"), userTarget);
+        var agents = Agents(".claude");
 
-        SkillLinker.ForceReset((FastString)B(tmp.Path), Agents(".claude"));
+        SkillLinker.ForceReset(V(tmp.Path), agents.AsView());
 
         Assert.True(new FileInfo(Path.Combine(agent, "user")).LinkTarget != null);
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]
@@ -198,11 +228,16 @@ public class SkillLinkerTests
             Directory.CreateDirectory(files);
             File.WriteAllText(Path.Combine(files, "one.txt"), "1");
         });
-        var report = new SyncReport();
-        SkillLinker.LinkFiles((FastString)B(tmp.Path), (FastString)B(clone), report);
+        var report = new SyncReport(4);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report);
         Assert.True(File.Exists(Path.Combine(tmp.Path, "one.txt")));
+        report.Dispose();
 
-        SkillLinker.ForceReset((FastString)B(tmp.Path), Array.Empty<Arg>());
+        var emptyAgents = new NativeList<NativeString>(0);
+        // Note: NativeList(0) → capacity < 4 → uses 4 internally, but Length is 0
+        // We need a valid NativeList even if empty
+        SkillLinker.ForceReset(V(tmp.Path), emptyAgents.AsView());
+        emptyAgents.Dispose();
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, "one.txt")));
     }
