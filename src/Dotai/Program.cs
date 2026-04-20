@@ -28,9 +28,10 @@ public static unsafe class Program
     {
         if (args.Length == 0) return HelpCommand.Execute(args);
         var first = args[0].AsView();
-        if (first == "--help"u8 || first == "-h"u8) return HelpCommand.Execute(args);
-        if (first == "init"u8) return new InitCommand().Execute(args);
-        if (first == "sync"u8) return new SyncCommand().Execute(args);
+        var rest = args.Slice(1);
+        if (first == "--help"u8 || first == "-h"u8) return HelpCommand.Execute(rest);
+        if (first == "init"u8) return new InitCommand().Execute(rest);
+        if (first == "sync"u8) return new SyncCommand().Execute(rest);
 
         var buf = new NativeBuffer(64);
         buf.Append("unknown command: "u8);
