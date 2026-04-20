@@ -57,5 +57,8 @@ public class InitCommandTests
         Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.jsonc")));
         Assert.True(File.Exists(Path.Combine(repo, ".ai", ".gitignore")));
         Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "owner_repo", ".git")));
+        var link = Path.Combine(repo, ".claude", "skills", "alpha");
+        Assert.True(Directory.Exists(link));
+        Assert.NotNull(new FileInfo(link).LinkTarget);
     }
 }
