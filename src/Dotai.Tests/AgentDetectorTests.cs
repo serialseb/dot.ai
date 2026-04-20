@@ -38,7 +38,7 @@ public class AgentDetectorTests
 
         var agents = AgentDetector.Detect(tmp.Path);
 
-        Assert.Equal(new[] { ".claude", ".codex", ".opencode" }, agents.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { ".claude", ".codex", ".opencode" }, agents.ToArray());
     }
 
     [Fact]
