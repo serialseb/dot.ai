@@ -53,5 +53,6 @@
     <LinkerArg Include="-Wl,-exported_symbols_list,$(MSBuildThisFileDirectory)exports.txt" />
     <LinkerArg Include="-Wl,-x" />
     <LinkerArg Include="-Wl,-no_compact_unwind" />
+    <LinkerArg Include="-Wl,-no_function_starts" />
   </ItemGroup>
 </Project>
