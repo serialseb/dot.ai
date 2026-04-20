@@ -11,4 +11,6 @@ public static class ConsoleOut
     public static void Warn(string msg) => Console.Error.WriteLine($"⚠️  warn: {msg}");
 
     public static void Error(string msg) => Console.Error.WriteLine($"❌ error: {msg}");
+
+    public static void Detail(string msg) => Console.Error.WriteLine(msg);
 }

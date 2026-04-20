@@ -51,17 +51,6 @@ public static class SkillLinker
             }
         }
 
-        CleanupOrphanedFileLinks(repoRoot, ownedPrefix);
-    }
-
-    private static void CleanupOrphanedFileLinks(string repoRoot, string ownedPrefix)
-    {
-        foreach (var entry in Directory.EnumerateFiles(repoRoot, "*", SearchOption.AllDirectories))
-        {
-            if (entry.StartsWith(Path.Combine(repoRoot, ".ai"))) continue;
-            if (entry.StartsWith(Path.Combine(repoRoot, ".git"))) continue;
-            RemoveIfDanglingAndOwned(entry, ownedPrefix);
-        }
     }
 
     private static void RemoveIfDanglingAndOwned(string path, string ownedPrefix)

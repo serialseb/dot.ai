@@ -10,6 +10,8 @@ public sealed class SyncCommand : ICommand
     public SyncCommand() : this(Directory.GetCurrentDirectory()) { }
     public SyncCommand(string startDir) { _startDir = startDir; }
 
+    public bool Silent { get; init; }
+
     public string Name => "sync";
     public string Help => "dotai sync — sync all configured source repositories.";
 
@@ -51,15 +53,18 @@ public sealed class SyncCommand : ICommand
         if (!report.Ok)
         {
             ConsoleOut.Warn("completed with issues:");
-            foreach (var r in report.ManualRepos) ConsoleOut.Info($"  • manual: {r}");
-            foreach (var c in report.Conflicts) ConsoleOut.Info($"  • conflict: {c}");
+            foreach (var r in report.ManualRepos) ConsoleOut.Detail($"  • manual: {r}");
+            foreach (var c in report.Conflicts) ConsoleOut.Detail($"  • conflict: {c}");
             ConsoleOut.Hint("resolve the issues above, then run 'dotai sync' again");
             return 3;
         }
 
-        var plural = config.Count == 1 ? "repository" : "repositories";
-        ConsoleOut.Success(
-            $"synced {report.SkillsLinked} skills, {report.FilesLinked} files across {config.Count} {plural}");
+        if (!Silent)
+        {
+            var plural = config.Count == 1 ? "repository" : "repositories";
+            ConsoleOut.Success(
+                $"synced {report.SkillsLinked} skills, {report.FilesLinked} files across {config.Count} {plural}");
+        }
         return 0;
     }
 

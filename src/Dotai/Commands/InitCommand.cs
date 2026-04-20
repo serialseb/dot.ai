@@ -77,7 +77,7 @@ public sealed class InitCommand : ICommand
 
         Robot.ShowIfTty();
 
-        var sync = new SyncCommand(_startDir);
+        var sync = new SyncCommand(_startDir) { Silent = true };
         var syncCode = sync.Execute(Array.Empty<string>());
         if (syncCode == 0)
         {
