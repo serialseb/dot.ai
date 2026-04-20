@@ -30,5 +30,9 @@
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
     <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
     <NullabilityInfoContextSupport>false</NullabilityInfoContextSupport>
+    <StripSymbols>true</StripSymbols>
+    <NativeDebugSymbols>false</NativeDebugSymbols>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 </Project>
