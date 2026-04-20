@@ -16,6 +16,19 @@
     <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
     <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
     <IsTrimmable>true</IsTrimmable>
-    <TrimMode>full</TrimMode>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>link</TrimMode>
+    <UseNativeHttpHandler>true</UseNativeHttpHandler>
+    <IlcDisableReflection>true</IlcDisableReflection>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+    <IlcScanReflection>false</IlcScanReflection>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <NullabilityInfoContextSupport>false</NullabilityInfoContextSupport>
   </PropertyGroup>
 </Project>
