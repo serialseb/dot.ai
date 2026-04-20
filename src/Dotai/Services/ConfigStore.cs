@@ -7,10 +7,16 @@ public static class ConfigStore
 {
     public static bool TryLoad(NativeStringView path, out NativeList<RepoConfig> config)
     {
-        if (!Fs.TryReadAllBytes(path, out var fileBytes))
+        if (!Fs.Exists(path))
         {
             config = new NativeList<RepoConfig>(4);
             return true; // missing → empty
+        }
+
+        if (!Fs.TryReadAllBytes(path, out var fileBytes))
+        {
+            config = new NativeList<RepoConfig>(4);
+            return true; // read failed → empty
         }
 
         if (!TomlConfig.TryParse(fileBytes.AsView(), out config))
