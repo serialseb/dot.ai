@@ -17,10 +17,11 @@ public static class GitClient
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
+        var stdoutTask = p.StandardOutput.ReadToEndAsync();
+        var stderrTask = p.StandardError.ReadToEndAsync();
         p.WaitForExit();
-        return new GitResult(p.ExitCode, stdout, stderr);
+        Task.WaitAll(stdoutTask, stderrTask);
+        return new GitResult(p.ExitCode, stdoutTask.Result, stderrTask.Result);
     }
 
     public static GitResult Clone(string url, string target)
