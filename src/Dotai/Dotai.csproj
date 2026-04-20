@@ -38,6 +38,9 @@
     <DebugSymbols>false</DebugSymbols>
     <CustomNativeMain>true</CustomNativeMain>
     <Features>runtime-async</Features>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <IlcInstructionSet>apple-m1</IlcInstructionSet>
+    <IlcExportUnmanagedEntryPoints>false</IlcExportUnmanagedEntryPoints>
   </PropertyGroup>
   <ItemGroup>
     <DirectPInvoke Include="libc" />
