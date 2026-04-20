@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Dotai.Services;
 using Dotai.Ui;
 
@@ -7,7 +6,6 @@ namespace Dotai.Commands;
 
 public sealed class InitCommand : ICommand
 {
-    private static readonly Regex ArgFormat = new(@"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$");
     private readonly string _startDir;
 
     public InitCommand() : this(Directory.GetCurrentDirectory()) { }
@@ -39,7 +37,7 @@ public sealed class InitCommand : ICommand
         }
 
         var arg = rest[0];
-        if (!ArgFormat.IsMatch(arg))
+        if (!IsValidOwnerRepo(arg))
         {
             ConsoleOut.Error($"invalid argument: '{arg}' (expected <owner>/<repo>)");
             return 1;
@@ -114,4 +112,31 @@ public sealed class InitCommand : ICommand
         }
         return syncCode;
     }
+
+    private static bool IsValidOwnerRepo(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        int slashCount = 0;
+        int segmentLength = 0;
+        foreach (var c in s)
+        {
+            if (c == '/')
+            {
+                if (segmentLength == 0) return false; // empty owner or adjacent slashes
+                if (slashCount == 1) return false;    // more than one slash
+                slashCount++;
+                segmentLength = 0;
+                continue;
+            }
+            if (!IsAllowedChar(c)) return false;
+            segmentLength++;
+        }
+        return slashCount == 1 && segmentLength > 0;
+    }
+
+    private static bool IsAllowedChar(char c) =>
+        (c >= 'A' && c <= 'Z')
+        || (c >= 'a' && c <= 'z')
+        || (c >= '0' && c <= '9')
+        || c == '.' || c == '_' || c == '-';
 }

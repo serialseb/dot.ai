@@ -1,36 +1,66 @@
+using System.Collections.Generic;
+using System.IO;
+
 namespace Dotai.Commands;
 
 public sealed record ParsedArgs(string StartDir, bool Force, string[] Positional);
 
 public static class SharedFlags
 {
+    private enum State
+    {
+        Normal,
+        ExpectingProjectPath,
+    }
+
     public static ParsedArgs Parse(string[] args, string defaultStartDir)
     {
+        var state = State.Normal;
         var startDir = defaultStartDir;
         var force = false;
         var positional = new List<string>();
 
-        for (int i = 0; i < args.Length; i++)
+        foreach (var token in args)
         {
-            var a = args[i];
-            if (a == "-p" || a == "--project")
+            switch (state)
             {
-                if (i + 1 >= args.Length)
-                    throw new ArgumentException("-p requires a path argument");
-                startDir = Path.GetFullPath(args[i + 1]);
-                i++;
-                continue;
+                case State.Normal:
+                    if (token == "-p" || token == "--project")
+                    {
+                        state = State.ExpectingProjectPath;
+                    }
+                    else if (token == "-f" || token == "--force")
+                    {
+                        force = true;
+                    }
+                    else if (IsHelpToken(token))
+                    {
+                        positional.Add(token);
+                    }
+                    else if (IsFlagToken(token))
+                    {
+                        throw new System.ArgumentException($"unknown flag: {token}");
+                    }
+                    else
+                    {
+                        positional.Add(token);
+                    }
+                    break;
+
+                case State.ExpectingProjectPath:
+                    startDir = Path.GetFullPath(token);
+                    state = State.Normal;
+                    break;
             }
-            if (a == "-f" || a == "--force")
-            {
-                force = true;
-                continue;
-            }
-            if (a.StartsWith('-') && a != "--help" && a != "-h")
-                throw new ArgumentException($"unknown flag: {a}");
-            positional.Add(a);
         }
+
+        if (state == State.ExpectingProjectPath)
+            throw new System.ArgumentException("-p requires a path argument");
 
         return new ParsedArgs(startDir, force, positional.ToArray());
     }
+
+    private static bool IsHelpToken(string t) => t == "--help" || t == "-h";
+
+    private static bool IsFlagToken(string t) => t.Length > 0 && t[0] == '-';
 }
