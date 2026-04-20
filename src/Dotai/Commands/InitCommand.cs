@@ -4,7 +4,7 @@ using Dotai.Ui;
 
 namespace Dotai.Commands;
 
-public sealed class InitCommand : ICommand
+public sealed class InitCommand
 {
     private readonly byte[] _startDir;
 
@@ -13,9 +13,6 @@ public sealed class InitCommand : ICommand
 
     // TEST-SEAM: tests pass a pre-encoded byte[] URL override.
     public byte[]? CloneUrlOverride { get; init; }
-
-    public string Name => "init";
-    public string Help => "dotai init [standard flags] <owner>/<repo> — register a source repository and sync.";
 
     public int Execute(Arg[] args)
     {

@@ -4,7 +4,7 @@ using Dotai.Ui;
 
 namespace Dotai.Commands;
 
-public sealed class SyncCommand : ICommand
+public sealed class SyncCommand
 {
     private readonly byte[] _startDir;
 
@@ -13,9 +13,6 @@ public sealed class SyncCommand : ICommand
 
     public bool Silent { get; init; }
     public bool Force { get; init; }
-
-    public string Name => "sync";
-    public string Help => "dotai sync [standard flags] — sync all configured source repositories.";
 
     public SyncReport? LastReport { get; private set; }
 

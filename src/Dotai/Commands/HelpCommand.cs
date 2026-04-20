@@ -3,11 +3,8 @@ using Dotai.Ui;
 
 namespace Dotai.Commands;
 
-public sealed class HelpCommand : ICommand
+public sealed class HelpCommand
 {
-    public string Name => "--help";
-    public string Help => "Show this message.";
-
     public int Execute(Arg[] args)
     {
         ConsoleOut.Info("""
