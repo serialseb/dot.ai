@@ -24,8 +24,9 @@ public class ConfigStoreTests
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "config.jsonc");
 
-        var config = ConfigStore.Load((FastString)B(path));
+        var ok = ConfigStore.TryLoad((FastString)B(path), out var config);
 
+        Assert.True(ok);
         Assert.Empty(config);
     }
 
@@ -34,11 +35,11 @@ public class ConfigStoreTests
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "config.jsonc");
-        var config = ConfigStore.Load((FastString)B(path));
+        ConfigStore.TryLoad((FastString)B(path), out var config);
 
         ConfigStore.AddRepo(config, (FastString)"https://github.com/foo/bar"u8);
         ConfigStore.Save((FastString)B(path), config);
-        var reloaded = ConfigStore.Load((FastString)B(path));
+        ConfigStore.TryLoad((FastString)B(path), out var reloaded);
 
         Assert.True(ContainsUrl(reloaded, "https://github.com/foo/bar"));
     }
@@ -72,19 +73,23 @@ public class ConfigStoreTests
         var path = Path.Combine(tmp.Path, "config.jsonc");
         File.WriteAllText(path, "// top comment\n{\n  \"https://github.com/foo/bar\": {} // inline\n}\n");
 
-        var config = ConfigStore.Load((FastString)B(path));
+        var ok = ConfigStore.TryLoad((FastString)B(path), out var config);
 
+        Assert.True(ok);
         Assert.True(ContainsUrl(config, "https://github.com/foo/bar"));
     }
 
     [Fact]
-    public void LoadThrowsOnNonObjectRoot()
+    public void LoadReturnsFalseOnNonObjectRoot()
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "config.jsonc");
         File.WriteAllText(path, "[\"not an object\"]");
 
-        Assert.Throws<InvalidDataException>(() => ConfigStore.Load((FastString)B(path)));
+        var ok = ConfigStore.TryLoad((FastString)B(path), out var config);
+
+        Assert.False(ok);
+        Assert.Empty(config);
     }
 
     [Fact]

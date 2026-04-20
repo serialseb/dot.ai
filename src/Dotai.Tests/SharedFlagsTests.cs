@@ -14,8 +14,9 @@ public class SharedFlagsTests
     [Fact]
     public void NoFlagsReturnsDefaultStartDirAndPositional()
     {
-        var r = SharedFlags.Parse(Args("owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("owner/repo"), (FastString)B("/default"), out var r);
 
+        Assert.True(ok);
         Assert.Equal(B("/default"), r.StartDir);
         Assert.Equal(new[] { A("owner/repo").Data }, r.Positional.Select(a => a.Data).ToArray(), ArraySegmentComparer.Instance);
     }
@@ -23,8 +24,9 @@ public class SharedFlagsTests
     [Fact]
     public void DashPConsumesPathAndStrips()
     {
-        var r = SharedFlags.Parse(Args("-p", "/tmp/foo", "owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("-p", "/tmp/foo", "owner/repo"), (FastString)B("/default"), out var r);
 
+        Assert.True(ok);
         Assert.Equal(B("/tmp/foo"), r.StartDir);
         Assert.Equal(new[] { A("owner/repo").Data }, r.Positional.Select(a => a.Data).ToArray(), ArraySegmentComparer.Instance);
     }
@@ -32,28 +34,32 @@ public class SharedFlagsTests
     [Fact]
     public void LongFormProjectIsEquivalent()
     {
-        var r = SharedFlags.Parse(Args("--project", "/tmp/foo", "owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("--project", "/tmp/foo", "owner/repo"), (FastString)B("/default"), out var r);
 
+        Assert.True(ok);
         Assert.Equal(B("/tmp/foo"), r.StartDir);
     }
 
     [Fact]
-    public void DashPWithoutValueThrows()
+    public void DashPWithoutValueReturnsFalse()
     {
-        Assert.Throws<ArgumentException>(() => SharedFlags.Parse(Args("-p"), (FastString)B("/default")));
+        var ok = SharedFlags.TryParse(Args("-p"), (FastString)B("/default"), out _);
+        Assert.False(ok);
     }
 
     [Fact]
-    public void UnknownFlagThrows()
+    public void UnknownFlagReturnsFalse()
     {
-        Assert.Throws<ArgumentException>(() => SharedFlags.Parse(Args("--foo"), (FastString)B("/default")));
+        var ok = SharedFlags.TryParse(Args("--foo"), (FastString)B("/default"), out _);
+        Assert.False(ok);
     }
 
     [Fact]
     public void HelpFlagIsPreservedAsPositional()
     {
-        var r = SharedFlags.Parse(Args("--help"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("--help"), (FastString)B("/default"), out var r);
 
+        Assert.True(ok);
         Assert.Contains(r.Positional, a => a.AsFast.Equals((FastString)"--help"u8));
     }
 
@@ -61,29 +67,33 @@ public class SharedFlagsTests
     public void RelativePathIsResolvedAgainstCwd()
     {
         var cwd = Encoding.UTF8.GetBytes(Directory.GetCurrentDirectory());
-        var r = SharedFlags.Parse(Args("-p", "."), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("-p", "."), (FastString)B("/default"), out var r);
 
+        Assert.True(ok);
         Assert.Equal(cwd, r.StartDir);
     }
 
     [Fact]
     public void DashFSetsForce()
     {
-        var r = SharedFlags.Parse(Args("-f", "owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("-f", "owner/repo"), (FastString)B("/default"), out var r);
+        Assert.True(ok);
         Assert.True(r.Force);
     }
 
     [Fact]
     public void LongFormForceIsEquivalent()
     {
-        var r = SharedFlags.Parse(Args("--force", "owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("--force", "owner/repo"), (FastString)B("/default"), out var r);
+        Assert.True(ok);
         Assert.True(r.Force);
     }
 
     [Fact]
     public void NoForceDefaultsFalse()
     {
-        var r = SharedFlags.Parse(Args("owner/repo"), (FastString)B("/default"));
+        var ok = SharedFlags.TryParse(Args("owner/repo"), (FastString)B("/default"), out var r);
+        Assert.True(ok);
         Assert.False(r.Force);
     }
 

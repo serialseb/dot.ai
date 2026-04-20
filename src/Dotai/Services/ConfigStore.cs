@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dotai.Text;
+using Dotai.Ui;
 
 namespace Dotai.Services;
 
@@ -12,24 +13,34 @@ public static class ConfigStore
     };
 
     // Byte-native API used by production code.
-    public static List<byte[]> Load(FastString path)
+    public static bool TryLoad(FastString path, out List<byte[]> config)
     {
-        if (!Fs.Exists(path)) return new List<byte[]>();
+        if (!Fs.Exists(path))
+        {
+            config = new List<byte[]>();
+            return true;
+        }
 
         var bytes = Fs.ReadAllBytes(path);
         var reader = new Utf8JsonReader(bytes, ReadOptions);
 
-        if (!reader.Read())
-            throw new InvalidDataException("Config file is empty.");
-        if (reader.TokenType != JsonTokenType.StartObject)
-            throw new InvalidDataException("Config file must contain a JSON object at the root.");
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+        {
+            EmitMalformedError(path);
+            config = new List<byte[]>();
+            return false;
+        }
 
         var result = new List<byte[]>();
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject) break;
             if (reader.TokenType != JsonTokenType.PropertyName)
-                throw new InvalidDataException($"Unexpected token {reader.TokenType} in config.");
+            {
+                EmitMalformedError(path);
+                config = new List<byte[]>();
+                return false;
+            }
 
             byte[] keyBytes;
             if (reader.HasValueSequence)
@@ -49,13 +60,18 @@ public static class ConfigStore
             }
 
             if (!reader.Read())
-                throw new InvalidDataException("Truncated value for a key in config.");
+            {
+                EmitMalformedError(path);
+                config = new List<byte[]>();
+                return false;
+            }
 
             SkipValue(ref reader);
             result.Add(keyBytes);
         }
 
-        return result;
+        config = result;
+        return true;
     }
 
     public static void AddRepo(List<byte[]> config, FastString uri)
@@ -84,6 +100,15 @@ public static class ConfigStore
             writer.WriteEndObject();
         }
         Fs.WriteAllBytes(path, stream.ToArray());
+    }
+
+    private static void EmitMalformedError(FastString path)
+    {
+        var buf = new ByteBuffer(path.Bytes.Length + 64);
+        buf.Append("config at "u8);
+        buf.Append(path.Bytes);
+        buf.Append(" is malformed. Fix it, or rerun with --force."u8);
+        ConsoleOut.Error(buf.Span);
     }
 
     private static bool ContainsBytes(List<byte[]> list, FastString candidate)

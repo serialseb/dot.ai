@@ -1,5 +1,6 @@
 using Dotai.Services;
 using Dotai.Text;
+using Dotai.Ui;
 
 namespace Dotai.Commands;
 
@@ -13,7 +14,7 @@ public static class SharedFlags
         ExpectingProjectPath,
     }
 
-    public static ParsedArgs Parse(Arg[] args, FastString defaultStartDir)
+    public static bool TryParse(Arg[] args, FastString defaultStartDir, out ParsedArgs result)
     {
         var state = State.Normal;
         var startDir = defaultStartDir.Bytes.ToArray();
@@ -39,10 +40,12 @@ public static class SharedFlags
                     }
                     else if (IsFlagToken(token))
                     {
-                        var buf = new Ui.ByteBuffer(token.Data.Length + 16);
+                        var buf = new ByteBuffer(token.Data.Length + 16);
                         buf.Append("unknown flag: "u8);
                         buf.Append(token.Data);
-                        throw new System.ArgumentException(System.Text.Encoding.UTF8.GetString(buf.Span));
+                        ConsoleOut.Error(buf.Span);
+                        result = new ParsedArgs(startDir, force, Array.Empty<Arg>());
+                        return false;
                     }
                     else
                     {
@@ -58,9 +61,14 @@ public static class SharedFlags
         }
 
         if (state == State.ExpectingProjectPath)
-            throw new System.ArgumentException("-p requires a path argument");
+        {
+            ConsoleOut.Error("-p requires a path argument"u8);
+            result = new ParsedArgs(startDir, force, Array.Empty<Arg>());
+            return false;
+        }
 
-        return new ParsedArgs(startDir, force, positional.ToArray());
+        result = new ParsedArgs(startDir, force, positional.ToArray());
+        return true;
     }
 
     private static bool IsHelpToken(Arg t)

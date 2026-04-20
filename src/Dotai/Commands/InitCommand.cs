@@ -1,4 +1,3 @@
-using System.Text;
 using Dotai.Services;
 using Dotai.Text;
 using Dotai.Ui;
@@ -21,13 +20,7 @@ public sealed class InitCommand : ICommand
 
     public int Execute(Arg[] args)
     {
-        ParsedArgs parsed;
-        try { parsed = SharedFlags.Parse(args, _startDir); }
-        catch (ArgumentException ex)
-        {
-            ConsoleOut.Error(Encoding.UTF8.GetBytes(ex.Message));
-            return 1;
-        }
+        if (!SharedFlags.TryParse(args, _startDir, out var parsed)) return 1;
 
         var rest = parsed.Positional;
         var startDir = parsed.StartDir;
@@ -95,22 +88,9 @@ public sealed class InitCommand : ICommand
             "repositories/"u8);
 
         var configPath = Fs.Combine(aiDir, "config.jsonc"u8);
-        List<byte[]> config;
-        try
+        if (!ConfigStore.TryLoad((FastString)configPath, out var config))
         {
-            config = ConfigStore.Load((FastString)configPath);
-        }
-        catch (InvalidDataException)
-        {
-            if (!parsed.Force)
-            {
-                var buf = new ByteBuffer(128);
-                buf.Append("config at "u8);
-                buf.Append(configPath);
-                buf.Append(" is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost)."u8);
-                ConsoleOut.Error(buf.Span);
-                return 2;
-            }
+            if (!parsed.Force) return 2;
             config = new List<byte[]>();
             ConfigStore.Save((FastString)configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost."u8);
