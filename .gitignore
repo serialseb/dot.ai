@@ -1,4 +1,6 @@
 .DS_Store
+bin/
+obj/
 
 # BEGIN SKILLSHARE MANAGED - DO NOT EDIT
 _SafeKeepIt-dot.ai/
