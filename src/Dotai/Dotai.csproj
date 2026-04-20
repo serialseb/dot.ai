@@ -56,5 +56,6 @@
     <LinkerArg Include="-Wl,-x" />
     <LinkerArg Include="-Wl,-no_compact_unwind" />
     <LinkerArg Include="-Wl,-no_function_starts" />
+    <LinkerArg Include="-Wl,-no_data_const" />
   </ItemGroup>
 </Project>
