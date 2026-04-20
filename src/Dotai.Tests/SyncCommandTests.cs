@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Dotai.Commands;
 using Dotai.Services;
 using Dotai.Tests.Fixtures;
@@ -21,7 +20,7 @@ public class SyncCommandTests
         var cloneKey = cloneNameOverride ?? GitClient.DeriveCloneName(remoteUrl);
         GitClient.Clone(remoteUrl, Path.Combine(reposDir, cloneKey));
 
-        var config = new Dictionary<string, JsonElement>();
+        var config = new List<string>();
         ConfigStore.AddRepo(config, remoteUrl);
         ConfigStore.Save(Path.Combine(aiDir, "config.jsonc"), config);
 

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Dotai.Services;
 using Dotai.Ui;
 
@@ -66,7 +65,7 @@ public sealed class InitCommand : ICommand
         GitignoreWriter.EnsureLine(Path.Combine(aiDir, ".gitignore"), "repositories/");
 
         var configPath = Path.Combine(aiDir, "config.jsonc");
-        Dictionary<string, JsonElement> config;
+        List<string> config;
         try
         {
             config = ConfigStore.Load(configPath);
@@ -78,11 +77,11 @@ public sealed class InitCommand : ICommand
                 ConsoleOut.Error($"config at {configPath} is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost).");
                 return 2;
             }
-            config = new Dictionary<string, JsonElement>();
+            config = new List<string>();
             ConfigStore.Save(configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost.");
         }
-        var alreadyRegistered = config.ContainsKey(url);
+        var alreadyRegistered = config.Contains(url);
         if (alreadyRegistered) ConsoleOut.Hint($"repository already registered: {url}");
         ConfigStore.AddRepo(config, url);
         ConfigStore.Save(configPath, config);

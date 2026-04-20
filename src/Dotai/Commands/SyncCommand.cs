@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Dotai.Services;
 using Dotai.Ui;
 
@@ -46,7 +45,7 @@ public sealed class SyncCommand : ICommand
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure.");
 
         var configPath = Path.Combine(repoRoot, ".ai", "config.jsonc");
-        Dictionary<string, JsonElement> config;
+        List<string> config;
         try
         {
             config = ConfigStore.Load(configPath);
@@ -58,7 +57,7 @@ public sealed class SyncCommand : ICommand
                 ConsoleOut.Error($"config at {configPath} is malformed. Fix the file, or rerun with --force to reset (all previous configuration will be lost).");
                 return 2;
             }
-            config = new Dictionary<string, JsonElement>();
+            config = new List<string>();
             ConfigStore.Save(configPath, config);
             ConsoleOut.Warn("--force: reset malformed config. previous configuration lost.");
         }
@@ -79,7 +78,7 @@ public sealed class SyncCommand : ICommand
 
         var report = new SyncReport();
 
-        foreach (var (url, _) in config)
+        foreach (var url in config)
         {
             SyncOne(repoRoot, url, agents, report);
         }

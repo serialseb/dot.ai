@@ -1,43 +1,86 @@
+using System.Text;
 using System.Text.Json;
 
 namespace Dotai.Services;
 
 public static class ConfigStore
 {
-    private static readonly JsonDocumentOptions ReadOptions = new()
+    private static readonly JsonReaderOptions ReadOptions = new()
     {
         CommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
     };
 
-    private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
-
-    public static Dictionary<string, JsonElement> Load(string path)
+    public static List<string> Load(string path)
     {
-        if (!File.Exists(path)) return new Dictionary<string, JsonElement>();
-        using var stream = File.OpenRead(path);
-        using var doc = JsonDocument.Parse(stream, ReadOptions);
-        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+        if (!File.Exists(path)) return new List<string>();
+
+        var bytes = File.ReadAllBytes(path);
+        var reader = new Utf8JsonReader(bytes, ReadOptions);
+
+        if (!reader.Read())
+            throw new InvalidDataException($"Config file '{path}' is empty.");
+        if (reader.TokenType != JsonTokenType.StartObject)
             throw new InvalidDataException($"Config file '{path}' must contain a JSON object at the root.");
-        var result = new Dictionary<string, JsonElement>();
-        foreach (var prop in doc.RootElement.EnumerateObject())
+
+        var result = new List<string>();
+        while (reader.Read())
         {
-            result[prop.Name] = prop.Value.Clone();
+            if (reader.TokenType == JsonTokenType.EndObject) break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                throw new InvalidDataException($"Unexpected token {reader.TokenType} in '{path}'.");
+
+            var key = reader.GetString()!;
+            if (!reader.Read())
+                throw new InvalidDataException($"Truncated value for key '{key}' in '{path}'.");
+
+            SkipValue(ref reader); // accept any value, discard — values are reserved for the future
+            result.Add(key);
         }
+
         return result;
     }
 
-    public static void AddRepo(Dictionary<string, JsonElement> config, string uri)
+    public static void AddRepo(List<string> config, string uri)
     {
-        config.TryAdd(uri, EmptyObject);
+        if (!config.Contains(uri)) config.Add(uri);
     }
 
-    public static void Save(string path, Dictionary<string, JsonElement> config)
+    public static void Save(string path, List<string> config)
     {
         var parent = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-        var typeInfo = ConfigJsonContext.Default.DictionaryStringJsonElement;
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(config, typeInfo);
-        File.WriteAllBytes(path, bytes);
+
+        using var stream = new MemoryStream();
+        var writerOptions = new JsonWriterOptions { Indented = true };
+        using (var writer = new Utf8JsonWriter(stream, writerOptions))
+        {
+            writer.WriteStartObject();
+            foreach (var url in config)
+            {
+                writer.WritePropertyName(url);
+                writer.WriteStartObject();
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
+        File.WriteAllBytes(path, stream.ToArray());
+    }
+
+    private static void SkipValue(ref Utf8JsonReader reader)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.StartObject:
+            case JsonTokenType.StartArray:
+                var depth = 1;
+                while (depth > 0 && reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.StartObject || reader.TokenType == JsonTokenType.StartArray) depth++;
+                    else if (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray) depth--;
+                }
+                break;
+            // scalar — already positioned on the value token, nothing to skip
+        }
     }
 }

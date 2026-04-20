@@ -28,13 +28,13 @@ public class ConfigStoreTests
         ConfigStore.Save(path, config);
         var reloaded = ConfigStore.Load(path);
 
-        Assert.Contains("https://github.com/foo/bar", reloaded.Keys);
+        Assert.Contains("https://github.com/foo/bar", reloaded);
     }
 
     [Fact]
     public void AddRepoIsIdempotent()
     {
-        var config = new Dictionary<string, System.Text.Json.JsonElement>();
+        var config = new List<string>();
 
         ConfigStore.AddRepo(config, "https://github.com/foo/bar");
         ConfigStore.AddRepo(config, "https://github.com/foo/bar");
@@ -45,7 +45,7 @@ public class ConfigStoreTests
     [Fact]
     public void AddRepoSupportsMultiple()
     {
-        var config = new Dictionary<string, System.Text.Json.JsonElement>();
+        var config = new List<string>();
 
         ConfigStore.AddRepo(config, "https://github.com/foo/bar");
         ConfigStore.AddRepo(config, "https://github.com/baz/qux");
@@ -62,7 +62,7 @@ public class ConfigStoreTests
 
         var config = ConfigStore.Load(path);
 
-        Assert.Contains("https://github.com/foo/bar", config.Keys);
+        Assert.Contains("https://github.com/foo/bar", config);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class ConfigStoreTests
     {
         using var tmp = new TempDir();
         var path = Path.Combine(tmp.Path, "a", "b", "config.jsonc");
-        var config = new Dictionary<string, System.Text.Json.JsonElement>();
+        var config = new List<string>();
         ConfigStore.AddRepo(config, "https://github.com/foo/bar");
 
         ConfigStore.Save(path, config);
