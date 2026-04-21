@@ -91,7 +91,8 @@ public class SkillLinkerTests
 
         Assert.True(report.Conflicts.Length > 0);
         var link = new FileInfo(Path.Combine(tmp.Path, ".claude", "skills", "alpha"));
-        Assert.Contains(cloneA, link.LinkTarget);
+        var resolved = Path.GetFullPath(link.LinkTarget!, Path.GetDirectoryName(link.FullName)!);
+        Assert.StartsWith(cloneA, resolved);
         report.Dispose();
         for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
         agents.Dispose();
@@ -240,6 +241,30 @@ public class SkillLinkerTests
         emptyAgents.Dispose();
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, "one.txt")));
+    }
+
+    [Fact]
+    public void LinksUseRelativeTargets()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+        });
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
+
+        var link = new FileInfo(Path.Combine(tmp.Path, ".claude", "skills", "alpha"));
+        Assert.NotNull(link.LinkTarget);
+        Assert.False(Path.IsPathRooted(link.LinkTarget), $"expected relative, got '{link.LinkTarget}'");
+        var resolved = Path.GetFullPath(link.LinkTarget!, Path.GetDirectoryName(link.FullName)!);
+        Assert.Equal(Path.Combine(clone, "skills", "alpha"), resolved);
+
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
     }
 
     [Fact]

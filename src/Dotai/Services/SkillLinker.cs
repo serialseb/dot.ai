@@ -142,20 +142,32 @@ public static unsafe class SkillLinker
         entries.Dispose();
     }
 
+    private static NativeString ResolveLinkTargetAbsolute(NativeStringView linkPath, NativeStringView linkTarget)
+    {
+        if (linkTarget.Length > 0 && linkTarget.Bytes[0] == (byte)'/')
+            return Fs.GetFullPath(linkTarget);
+        var dirName = Fs.GetDirectoryName(linkPath);
+        var combined = Fs.Combine(dirName.AsView(), linkTarget);
+        dirName.Dispose();
+        var normalized = Fs.GetFullPath(combined.AsView());
+        combined.Dispose();
+        return normalized;
+    }
+
+    private static bool CreateRelativeSymlink(NativeStringView linkPath, NativeStringView source)
+    {
+        var dirName = Fs.GetDirectoryName(linkPath);
+        var rel = Fs.GetRelativePath(dirName.AsView(), source);
+        dirName.Dispose();
+        bool ok = Fs.TryCreateSymbolicLink(linkPath, rel.AsView());
+        rel.Dispose();
+        return ok;
+    }
+
     private static void RemoveIfOwned(NativeStringView path, NativeStringView ownedPrefix)
     {
         if (!Fs.TryReadSymbolicLinkTarget(path, out var target)) return;
-        NativeString absolute;
-        if (target.Length > 0 && target.AsView().Bytes[0] == (byte)'/')
-        {
-            absolute = NativeString.From(target.AsView());
-        }
-        else
-        {
-            var dirName = Fs.GetDirectoryName(path);
-            absolute = Fs.Combine(dirName.AsView(), target.AsView());
-            dirName.Dispose();
-        }
+        var absolute = ResolveLinkTargetAbsolute(path, target.AsView());
         target.Dispose();
         if (!StartsWith(absolute.AsView(), ownedPrefix)) { absolute.Dispose(); return; }
         absolute.Dispose();
@@ -165,17 +177,7 @@ public static unsafe class SkillLinker
     private static void RemoveIfDanglingAndOwned(NativeStringView path, NativeStringView ownedPrefix)
     {
         if (!Fs.TryReadSymbolicLinkTarget(path, out var target)) return;
-        NativeString absolute;
-        if (target.Length > 0 && target.AsView().Bytes[0] == (byte)'/')
-        {
-            absolute = NativeString.From(target.AsView());
-        }
-        else
-        {
-            var dirName = Fs.GetDirectoryName(path);
-            absolute = Fs.Combine(dirName.AsView(), target.AsView());
-            dirName.Dispose();
-        }
+        var absolute = ResolveLinkTargetAbsolute(path, target.AsView());
         target.Dispose();
         if (!StartsWith(absolute.AsView(), ownedPrefix)) { absolute.Dispose(); return; }
         if (Fs.Exists(absolute.AsView())) { absolute.Dispose(); return; }
@@ -202,7 +204,7 @@ public static unsafe class SkillLinker
                     if (Fs.TryRename(target, bak.AsView()))
                     {
                         bak.Dispose();
-                        Fs.TryCreateSymbolicLink(target, source);
+                        CreateRelativeSymlink(target, source);
                         return true;
                     }
                     bak.Dispose();
@@ -214,17 +216,7 @@ public static unsafe class SkillLinker
                 return false;
             }
 
-            NativeString existingAbsolute;
-            if (existingLinkTarget.Length > 0 && existingLinkTarget.AsView().Bytes[0] == (byte)'/')
-            {
-                existingAbsolute = NativeString.From(existingLinkTarget.AsView());
-            }
-            else
-            {
-                var dirName = Fs.GetDirectoryName(target);
-                existingAbsolute = Fs.Combine(dirName.AsView(), existingLinkTarget.AsView());
-                dirName.Dispose();
-            }
+            var existingAbsolute = ResolveLinkTargetAbsolute(target, existingLinkTarget.AsView());
             existingLinkTarget.Dispose();
 
             var sourceFullPath = Fs.GetFullPath(source);
@@ -251,7 +243,7 @@ public static unsafe class SkillLinker
             Fs.TryDeleteFile(target);
         }
 
-        Fs.TryCreateSymbolicLink(target, source);
+        CreateRelativeSymlink(target, source);
         return true;
     }
 
