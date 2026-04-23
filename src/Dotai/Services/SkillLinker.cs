@@ -3,6 +3,8 @@ using Dotai.Ui;
 
 namespace Dotai.Services;
 
+public enum LinkResult { Unchanged, New, Updated, Conflict }
+
 public static unsafe class SkillLinker
 {
     public static void LinkSkills(
@@ -30,7 +32,12 @@ public static unsafe class SkillLinker
                 Fs.TryCreateDirectory(targetDir.AsView());
                 var target = Fs.Combine(targetDir.AsView(), skillName.AsView());
                 targetDir.Dispose();
-                if (EnsureSymlink(target.AsView(), skillPath, force, ref report)) report.SkillsLinked++;
+                switch (EnsureSymlink(target.AsView(), skillPath, force, ref report))
+                {
+                    case LinkResult.New: report.SkillsNew++; break;
+                    case LinkResult.Updated: report.SkillsUpdated++; break;
+                    case LinkResult.Unchanged: report.SkillsUnchanged++; break;
+                }
                 target.Dispose();
             }
             skillName.Dispose();
@@ -58,7 +65,12 @@ public static unsafe class SkillLinker
             var parent = Fs.GetDirectoryName(target.AsView());
             if (!parent.IsEmpty) Fs.TryCreateDirectory(parent.AsView());
             parent.Dispose();
-            if (EnsureSymlink(target.AsView(), filePath, force, ref report)) report.FilesLinked++;
+            switch (EnsureSymlink(target.AsView(), filePath, force, ref report))
+            {
+                case LinkResult.New: report.FilesNew++; break;
+                case LinkResult.Updated: report.FilesUpdated++; break;
+                case LinkResult.Unchanged: report.FilesUnchanged++; break;
+            }
             target.Dispose();
         }
         filesDir.Dispose();
@@ -66,7 +78,7 @@ public static unsafe class SkillLinker
         filePaths.Dispose();
     }
 
-    public static void CleanupOrphans(NativeStringView repoRoot, NativeListView<NativeString> agents)
+    public static void CleanupOrphans(NativeStringView repoRoot, NativeListView<NativeString> agents, ref SyncReport report)
     {
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
         var ownedPrefix = Fs.Combine(aiDir.AsView(), "repositories"u8);
@@ -81,7 +93,10 @@ public static unsafe class SkillLinker
             var entries = Fs.EnumerateFileSystemEntries(dir.AsView());
             dir.Dispose();
             for (int i = 0; i < entries.Length; i++)
-                RemoveIfDanglingAndOwned(entries[i].AsView(), ownedPrefix.AsView());
+            {
+                if (RemoveIfDanglingAndOwned(entries[i].AsView(), ownedPrefix.AsView()))
+                    report.SkillsGone++;
+            }
             for (int i = 0; i < entries.Length; i++) entries[i].Dispose();
             entries.Dispose();
         }
@@ -174,18 +189,18 @@ public static unsafe class SkillLinker
         Fs.TryDeleteFile(path);
     }
 
-    private static void RemoveIfDanglingAndOwned(NativeStringView path, NativeStringView ownedPrefix)
+    private static bool RemoveIfDanglingAndOwned(NativeStringView path, NativeStringView ownedPrefix)
     {
-        if (!Fs.TryReadSymbolicLinkTarget(path, out var target)) return;
+        if (!Fs.TryReadSymbolicLinkTarget(path, out var target)) return false;
         var absolute = ResolveLinkTargetAbsolute(path, target.AsView());
         target.Dispose();
-        if (!StartsWith(absolute.AsView(), ownedPrefix)) { absolute.Dispose(); return; }
-        if (Fs.Exists(absolute.AsView())) { absolute.Dispose(); return; }
+        if (!StartsWith(absolute.AsView(), ownedPrefix)) { absolute.Dispose(); return false; }
+        if (Fs.Exists(absolute.AsView())) { absolute.Dispose(); return false; }
         absolute.Dispose();
-        Fs.TryDeleteFile(path);
+        return Fs.TryDeleteFile(path);
     }
 
-    private static bool EnsureSymlink(NativeStringView target, NativeStringView source, bool force, ref SyncReport report)
+    private static LinkResult EnsureSymlink(NativeStringView target, NativeStringView source, bool force, ref SyncReport report)
     {
         bool targetExists = Fs.Exists(target);
         bool targetIsLink = Fs.IsSymlink(target);
@@ -205,7 +220,7 @@ public static unsafe class SkillLinker
                     {
                         bak.Dispose();
                         CreateRelativeSymlink(target, source);
-                        return true;
+                        return LinkResult.Updated;
                     }
                     bak.Dispose();
                 }
@@ -213,7 +228,7 @@ public static unsafe class SkillLinker
                 buf.Append(target);
                 buf.Append(": exists as real file/directory, not a symlink"u8);
                 report.Conflicts.Add(buf.Freeze());
-                return false;
+                return LinkResult.Conflict;
             }
 
             var existingAbsolute = ResolveLinkTargetAbsolute(target, existingLinkTarget.AsView());
@@ -222,7 +237,15 @@ public static unsafe class SkillLinker
             var sourceFullPath = Fs.GetFullPath(source);
             bool samePath = existingAbsolute.AsView().Bytes.SequenceEqual(sourceFullPath.AsView().Bytes);
             sourceFullPath.Dispose();
-            if (samePath) { existingAbsolute.Dispose(); return false; }
+            if (samePath)
+            {
+                bool resolves = Fs.Exists(existingAbsolute.AsView());
+                existingAbsolute.Dispose();
+                if (resolves) return LinkResult.Unchanged;
+                Fs.TryDeleteFile(target);
+                CreateRelativeSymlink(target, source);
+                return LinkResult.Updated;
+            }
 
             if (IsInDifferentClone(source, existingAbsolute.AsView()))
             {
@@ -236,15 +259,17 @@ public static unsafe class SkillLinker
                 name.Dispose();
                 existingAbsolute.Dispose();
                 report.Conflicts.Add(buf.Freeze());
-                return false;
+                return LinkResult.Conflict;
             }
 
             existingAbsolute.Dispose();
             Fs.TryDeleteFile(target);
+            CreateRelativeSymlink(target, source);
+            return LinkResult.Updated;
         }
 
         CreateRelativeSymlink(target, source);
-        return true;
+        return LinkResult.New;
     }
 
     private static bool IsInDifferentClone(NativeStringView a, NativeStringView b)

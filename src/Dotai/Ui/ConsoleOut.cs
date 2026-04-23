@@ -13,6 +13,12 @@ public static class ConsoleOut
         Stdio.Write(Stdout, "\n"u8);
     }
 
+    public static void WriteLineStdout(NativeStringView msg)
+    {
+        Stdio.Write(Stdout, msg);
+        Stdio.Write(Stdout, "\n"u8);
+    }
+
     public static void Success(NativeStringView msg)
     {
         if (Stdio.IsTty(Stdout))
