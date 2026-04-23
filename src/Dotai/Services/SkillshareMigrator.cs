@@ -31,6 +31,53 @@ public static unsafe class SkillshareMigrator
         return ok;
     }
 
+    // Reads the [[repository]] entries from .ai/migration/skillshare.toml
+    // and returns the set of clone directory names recorded there. These
+    // clones must be preserved by sync reconciliation so dotai init
+    // --uninstall can roll back a Skillshare migration even when the user
+    // later removes the config entry.
+    public static NativeList<NativeString> LoadProtectedCloneNames(NativeStringView repoRoot)
+    {
+        var path = Fs.Combine(repoRoot, ".ai/migration/skillshare.toml"u8);
+        var result = new NativeList<NativeString>(4);
+        if (!Fs.Exists(path.AsView())) { path.Dispose(); return result; }
+        if (!Fs.TryReadAllBytes(path.AsView(), out var bytes)) { path.Dispose(); return result; }
+        path.Dispose();
+
+        var src = bytes.AsView().Bytes;
+        int cursor = 0;
+        while (cursor < src.Length)
+        {
+            int secIdx = src[cursor..].IndexOf("[[repository]]"u8);
+            if (secIdx < 0) break;
+            cursor += secIdx + "[[repository]]"u8.Length;
+            while (cursor < src.Length)
+            {
+                int lineEnd = src[cursor..].IndexOf((byte)'\n');
+                var line = lineEnd < 0 ? src[cursor..] : src[cursor..(cursor + lineEnd)];
+                var trimmed = new NativeStringView(line).Trim();
+                if (trimmed.Length >= 1 && trimmed.Bytes[0] == (byte)'[') break;
+                int eq = trimmed.IndexOf((byte)'=');
+                if (eq > 0)
+                {
+                    var key = new NativeStringView(trimmed.Bytes[..eq]).Trim();
+                    if (key.Bytes.SequenceEqual("new_name"u8))
+                    {
+                        var val = new NativeStringView(trimmed.Bytes[(eq + 1)..]).Trim();
+                        if (val.Length >= 2 && val.Bytes[0] == (byte)'"' && val.Bytes[val.Length - 1] == (byte)'"')
+                            val = val.Slice(1, val.Length - 2);
+                        result.Add(NativeString.From(val));
+                        break;
+                    }
+                }
+                if (lineEnd < 0) { cursor = src.Length; break; }
+                cursor += lineEnd + 1;
+            }
+        }
+        bytes.Dispose();
+        return result;
+    }
+
     public static bool TryMigrate(NativeStringView repoRoot, out MigrationStats stats)
     {
         stats = default;

@@ -230,6 +230,32 @@ public static unsafe class Fs
         return true;
     }
 
+    // Removes a directory and all its contents. Symlinks inside are deleted
+    // (never followed). No-op when the path does not exist.
+    public static bool TryDeleteDirectoryRecursive(NativeStringView path)
+    {
+        if (!Exists(path)) return true;
+        if (IsSymlink(path)) return TryDeleteFile(path);
+
+        var entries = EnumerateFileSystemEntries(path);
+        bool ok = true;
+        for (int i = 0; i < entries.Length; i++)
+        {
+            var e = entries[i].AsView();
+            if (IsSymlink(e) || !IsDirectory(e)) ok &= TryDeleteFile(e);
+            else ok &= TryDeleteDirectoryRecursive(e);
+        }
+        for (int i = 0; i < entries.Length; i++) entries[i].Dispose();
+        entries.Dispose();
+
+        byte* buf = stackalloc byte[MaxStack];
+        byte* p = NullTerm(path, buf);
+        int r = Libc.Rmdir(p);
+        FreeHeap(path, p, buf);
+        if (r != 0) { EmitError("rmdir failed: "u8, path); return false; }
+        return ok;
+    }
+
     public static bool TryRename(NativeStringView from, NativeStringView to)
     {
         byte* fbuf = stackalloc byte[MaxStack];
