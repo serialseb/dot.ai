@@ -50,6 +50,8 @@ public sealed class SyncCommand
 
     private static int ExecuteCore(NativeStringView startDir, bool force, bool silent, ref SyncReport report)
     {
+        long startMs = Environment.TickCount64;
+
         if (!RepoRootResolver.TryFind(startDir, out var repoRoot))
         {
             ConsoleOut.Error("dotai requires a git repository"u8);
@@ -96,11 +98,19 @@ public sealed class SyncCommand
 
         report = new SyncReport(4);
 
-        for (int i = 0; i < config.Length; i++)
+        if (!silent)
         {
-            SyncOne(repoRoot.AsView(), config[i], agentNames.AsView(), ref report);
+            ConsoleOut.WriteLineStdout("🔄 Syncing repositories…"u8);
+            ConsoleOut.WriteLineStdout(""u8);
         }
 
+        for (int i = 0; i < config.Length; i++)
+        {
+            SyncOne(repoRoot.AsView(), config[i], agentNames.AsView(), silent, force, ref report);
+            if (!silent) ConsoleOut.WriteLineStdout(""u8);
+        }
+
+        int repoCount = config.Length;
         for (int i = 0; i < config.Length; i++) config[i].Dispose();
         config.Dispose();
 
@@ -134,18 +144,15 @@ public sealed class SyncCommand
 
         if (!silent)
         {
-            NativeStringView plural = config.Length == 1 ? "repository"u8 : "repositories"u8;
-            var buf = new NativeBuffer(64);
-            buf.Append("synced "u8);
-            buf.AppendInt(report.SkillsLinked);
-            buf.Append(" skills, "u8);
-            buf.AppendInt(report.FilesLinked);
-            buf.Append(" files across "u8);
-            buf.AppendInt(config.Length);
-            buf.AppendByte((byte)' ');
-            buf.Append(plural);
-            ConsoleOut.Success(buf.AsView());
-            buf.Dispose();
+            EmitCategoryLine(
+                "🧠 Skills"u8,
+                report.SkillsNew, report.SkillsUpdated, report.SkillsGone);
+            EmitCategoryLine(
+                "📁 Files "u8,
+                report.FilesNew, report.FilesUpdated, report.FilesGone);
+
+            long elapsedMs = Environment.TickCount64 - startMs;
+            EmitElapsed(elapsedMs);
         }
 
         for (int i = 0; i < agentNames.Length; i++) agentNames[i].Dispose();
@@ -158,7 +165,7 @@ public sealed class SyncCommand
         "dotai sync [standard flags] — sync all configured source repositories."u8;
 
     private static void SyncOne(NativeStringView repoRoot, in RepoConfig entry,
-        NativeListView<NativeString> agents, ref SyncReport report)
+        NativeListView<NativeString> agents, bool silent, bool force, ref SyncReport report)
     {
         var nameView = entry.Name.AsView();
 
@@ -168,6 +175,11 @@ public sealed class SyncCommand
         urlBuf.Append(nameView);
         var urlNs = urlBuf.Freeze();
 
+        // Short name = last path segment of nameView
+        var shortName = nameView;
+        int slash = nameView.Bytes.LastIndexOf((byte)'/');
+        if (slash >= 0) shortName = new NativeStringView(nameView.Bytes[(slash + 1)..]);
+
         // Clone dir: .ai/repositories/<owner>_<repo>
         var cloneName = GitClient.DeriveCloneName(nameView);
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
@@ -175,6 +187,8 @@ public sealed class SyncCommand
         aiDir.Dispose();
         var clone = Fs.Combine(reposDir.AsView(), cloneName.AsView());
         cloneName.Dispose(); reposDir.Dispose();
+
+        if (!silent) EmitRepoHeader(shortName, urlNs.AsView());
 
         var cloneDotGit = Fs.Combine(clone.AsView(), ".git"u8);
         if (!Fs.IsDirectory(cloneDotGit.AsView()))
@@ -200,15 +214,17 @@ public sealed class SyncCommand
         }
 
         var status = GitClient.StatusPorcelain(clone.AsView());
-        if (!status.StdOut.AsView().IsBlank())
+        bool hasLocalChanges = !status.StdOut.AsView().IsBlank();
+        status.Dispose();
+        if (hasLocalChanges)
         {
             var addResult = GitClient.AddAll(clone.AsView());
+            int addCode = addResult.ExitCode;
             addResult.Dispose();
             var commitResult = GitClient.Commit(clone.AsView(), "dotai sync"u8);
-            if (addResult.ExitCode != 0 || commitResult.ExitCode != 0)
+            if (addCode != 0 || commitResult.ExitCode != 0)
             {
                 commitResult.Dispose();
-                status.Dispose();
                 var msg = new NativeBuffer(clone.Length + 20);
                 msg.Append(clone.AsView());
                 msg.Append(" (commit failed)"u8);
@@ -218,7 +234,8 @@ public sealed class SyncCommand
             }
             commitResult.Dispose();
         }
-        status.Dispose();
+
+        if (!silent) ConsoleOut.WriteLineStdout("🔍 Checking for changes…"u8);
 
         var fetchResult = GitClient.Fetch(clone.AsView());
         if (fetchResult.ExitCode != 0)
@@ -240,6 +257,17 @@ public sealed class SyncCommand
         upstreamBuf.Append(branchNs.AsView());
         var upstream = upstreamBuf.Freeze();
 
+        if (!silent)
+        {
+            var downRange = new NativeBuffer(upstream.Length + 8);
+            downRange.Append("HEAD.."u8);
+            downRange.Append(upstream.AsView());
+            int downCount = GitClient.RevListCount(clone.AsView(), downRange.AsView());
+            var downStat = downCount > 0 ? GitClient.ShortStat(clone.AsView(), downRange.AsView()) : default;
+            downRange.Dispose();
+            EmitChangesLine(pickingUp: true, count: downCount, stat: downStat);
+        }
+
         var rebase = GitClient.Rebase(clone.AsView(), upstream.AsView());
         upstream.Dispose();
         if (rebase.ExitCode != 0)
@@ -254,6 +282,21 @@ public sealed class SyncCommand
             return;
         }
         rebase.Dispose();
+
+        if (!silent)
+        {
+            var upstreamRef = new NativeBuffer(branchNs.Length + 8);
+            upstreamRef.Append("origin/"u8);
+            upstreamRef.Append(branchNs.AsView());
+            var upRange = new NativeBuffer(upstreamRef.Length + 8);
+            upRange.Append(upstreamRef.AsView());
+            upRange.Append("..HEAD"u8);
+            upstreamRef.Dispose();
+            int upCount = GitClient.RevListCount(clone.AsView(), upRange.AsView());
+            var upStat = upCount > 0 ? GitClient.ShortStat(clone.AsView(), upRange.AsView()) : default;
+            upRange.Dispose();
+            EmitChangesLine(pickingUp: false, count: upCount, stat: upStat);
+        }
 
         var push = GitClient.Push(clone.AsView(), branchNs.AsView());
         branchNs.Dispose();
@@ -272,25 +315,116 @@ public sealed class SyncCommand
         }
         push.Dispose();
 
-        var skillsBefore = report.SkillsLinked;
-        var filesBefore = report.FilesLinked;
-        SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report);
-        SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report);
-        SkillLinker.CleanupOrphans(repoRoot, agents);
-        var deltaSkills = report.SkillsLinked - skillsBefore;
-        var deltaFiles = report.FilesLinked - filesBefore;
+        SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report, force);
+        SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report, force);
+        SkillLinker.CleanupOrphans(repoRoot, agents, ref report);
 
-        var msgBuf = new NativeBuffer(64);
-        msgBuf.Append("  \xe2\x80\xa2 "u8);
-        msgBuf.Append(nameView);
-        msgBuf.Append(": "u8);
-        msgBuf.AppendInt(deltaSkills);
-        msgBuf.Append(" skills, "u8);
-        msgBuf.AppendInt(deltaFiles);
-        msgBuf.Append(" files"u8);
-        ConsoleOut.Info(msgBuf.AsView());
-        msgBuf.Dispose();
+        if (!silent) ConsoleOut.WriteLineStdout("☑️  Sync complete"u8);
+
         clone.Dispose();
         urlNs.Dispose();
+    }
+
+    private static void EmitRepoHeader(NativeStringView shortName, NativeStringView url)
+    {
+        bool tty = Stdio.IsTty(1);
+        if (tty)
+        {
+            // 🗂️  <OSC8 url>cyan name</OSC8>
+            Stdio.Write(1, "🗂️  "u8);
+            Stdio.Write(1, "\x1b]8;;"u8);
+            Stdio.Write(1, url);
+            Stdio.Write(1, "\x1b\\"u8);
+            Stdio.Write(1, "\x1b[36m"u8);
+            Stdio.Write(1, shortName);
+            Stdio.Write(1, "\x1b[0m"u8);
+            Stdio.Write(1, "\x1b]8;;\x1b\\\n"u8);
+        }
+        else
+        {
+            Stdio.Write(1, "# "u8);
+            Stdio.Write(1, shortName);
+            Stdio.Write(1, " ("u8);
+            Stdio.Write(1, url);
+            Stdio.Write(1, ")\n"u8);
+        }
+    }
+
+    private static void EmitChangesLine(bool pickingUp, int count, GitClient.DiffStat stat)
+    {
+        var buf = new NativeBuffer(96);
+        buf.Append(pickingUp ? "📥 "u8 : "📤 "u8);
+        if (count == 0)
+        {
+            buf.Append(pickingUp ? "No changes to pick"u8 : "No changes to apply"u8);
+        }
+        else
+        {
+            buf.Append(pickingUp ? "Picking up "u8 : "Applying "u8);
+            buf.AppendInt(count);
+            buf.Append(count == 1 ? " change (+"u8 : " changes (+"u8);
+            buf.AppendInt(stat.Added);
+            buf.Append("/-"u8);
+            buf.AppendInt(stat.Deleted);
+            buf.Append(")…"u8);
+        }
+        ConsoleOut.WriteLineStdout(buf.AsView());
+        buf.Dispose();
+    }
+
+    private static void EmitCategoryLine(NativeStringView labelWithEmoji, int newCount, int updated, int gone)
+    {
+        if (newCount == 0 && updated == 0 && gone == 0) return;
+        var buf = new NativeBuffer(128);
+        buf.Append(labelWithEmoji);
+        buf.AppendByte((byte)'\t');
+        bool first = true;
+        if (newCount > 0)
+        {
+            if (!first) buf.Append(" · "u8);
+            buf.Append("✨ "u8);
+            buf.AppendInt(newCount);
+            buf.Append(" new"u8);
+            first = false;
+        }
+        if (updated > 0)
+        {
+            if (!first) buf.Append(" · "u8);
+            buf.Append("🌀 "u8);
+            buf.AppendInt(updated);
+            buf.Append(" updated"u8);
+            first = false;
+        }
+        if (gone > 0)
+        {
+            if (!first) buf.Append(" · "u8);
+            buf.Append("🗑️  "u8);
+            buf.AppendInt(gone);
+            buf.Append(" gone"u8);
+        }
+        ConsoleOut.WriteLineStdout(buf.AsView());
+        buf.Dispose();
+    }
+
+    private static void EmitElapsed(long elapsedMs)
+    {
+        long totalSec = elapsedMs / 1000;
+        long mins = totalSec / 60;
+        long secs = totalSec % 60;
+        var buf = new NativeBuffer(48);
+        bool tty = Stdio.IsTty(1);
+        if (tty) buf.Append("\x1b[90m"u8);
+        buf.Append("(sync time: "u8);
+        if (mins > 0)
+        {
+            buf.AppendInt((int)mins);
+            buf.Append("m "u8);
+        }
+        buf.AppendInt((int)secs);
+        buf.AppendByte((byte)'s');
+        buf.AppendByte((byte)')');
+        if (tty) buf.Append("\x1b[0m"u8);
+        ConsoleOut.WriteLineStdout(buf.AsView());
+        buf.Dispose();
     }
 }

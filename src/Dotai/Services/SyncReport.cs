@@ -6,16 +6,25 @@ public struct SyncReport
 {
     public NativeList<NativeString> ManualRepos;
     public NativeList<NativeString> Conflicts;
-    public int SkillsLinked;
-    public int FilesLinked;
+    public int SkillsNew;
+    public int SkillsUpdated;
+    public int SkillsUnchanged;
+    public int SkillsGone;
+    public int FilesNew;
+    public int FilesUpdated;
+    public int FilesUnchanged;
+    public int FilesGone;
 
     public SyncReport(int capacity = 4)
     {
         ManualRepos = new NativeList<NativeString>(capacity);
         Conflicts = new NativeList<NativeString>(capacity);
-        SkillsLinked = 0;
-        FilesLinked = 0;
+        SkillsNew = SkillsUpdated = SkillsUnchanged = SkillsGone = 0;
+        FilesNew = FilesUpdated = FilesUnchanged = FilesGone = 0;
     }
+
+    public int SkillsLinked => SkillsNew + SkillsUpdated + SkillsUnchanged;
+    public int FilesLinked => FilesNew + FilesUpdated + FilesUnchanged;
 
     public bool Ok => ManualRepos.Length == 0 && Conflicts.Length == 0;
 

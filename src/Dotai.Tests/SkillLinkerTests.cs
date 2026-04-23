@@ -91,7 +91,8 @@ public class SkillLinkerTests
 
         Assert.True(report.Conflicts.Length > 0);
         var link = new FileInfo(Path.Combine(tmp.Path, ".claude", "skills", "alpha"));
-        Assert.Contains(cloneA, link.LinkTarget);
+        var resolved = Path.GetFullPath(link.LinkTarget!, Path.GetDirectoryName(link.FullName)!);
+        Assert.StartsWith(cloneA, resolved);
         report.Dispose();
         for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
         agents.Dispose();
@@ -112,7 +113,10 @@ public class SkillLinkerTests
         report.Dispose();
 
         Directory.Delete(Path.Combine(clone, "skills", "alpha"), recursive: true);
-        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView());
+        var cleanupReport = new SyncReport(4);
+        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView(), ref cleanupReport);
+        Assert.Equal(1, cleanupReport.SkillsGone);
+        cleanupReport.Dispose();
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, ".claude", "skills", "alpha")));
         for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
@@ -131,7 +135,9 @@ public class SkillLinkerTests
         Directory.Delete(userTarget, recursive: true);
         var agents = Agents(".claude");
 
-        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView());
+        var cleanupReport = new SyncReport(4);
+        SkillLinker.CleanupOrphans(V(tmp.Path), agents.AsView(), ref cleanupReport);
+        cleanupReport.Dispose();
 
         Assert.True(new FileInfo(Path.Combine(agent, "user")).LinkTarget != null);
         for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
@@ -240,5 +246,136 @@ public class SkillLinkerTests
         emptyAgents.Dispose();
 
         Assert.False(File.Exists(Path.Combine(tmp.Path, "one.txt")));
+    }
+
+    [Fact]
+    public void ResyncCountsExistingCorrectLinks()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+            Directory.CreateDirectory(Path.Combine(c, "skills", "beta"));
+        });
+        var agents = Agents(".claude");
+
+        var first = new SyncReport(4);
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref first);
+        Assert.Equal(2, first.SkillsLinked);
+        first.Dispose();
+
+        var second = new SyncReport(4);
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref second);
+        Assert.Equal(2, second.SkillsLinked);
+        Assert.Equal(0, second.Conflicts.Length);
+        second.Dispose();
+
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
+    }
+
+    [Fact]
+    public void ResyncRepairsDanglingLinkPointingAtSource()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+        });
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
+
+        var sourceSkill = Path.Combine(clone, "skills", "alpha");
+        Directory.Delete(sourceSkill);
+
+        var linkPath = Path.Combine(tmp.Path, ".claude", "skills", "alpha");
+        Assert.True(File.Exists(linkPath) || Directory.Exists(linkPath) || new FileInfo(linkPath).LinkTarget != null);
+
+        Directory.CreateDirectory(sourceSkill);
+        File.WriteAllText(Path.Combine(sourceSkill, "SKILL.md"), "regen");
+
+        var second = new SyncReport(4);
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref second);
+        Assert.Equal(1, second.SkillsLinked);
+        Assert.True(Directory.Exists(linkPath));
+        second.Dispose();
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
+    }
+
+    [Fact]
+    public void LinksUseRelativeTargets()
+    {
+        using var tmp = new TempDir();
+        Directory.CreateDirectory(Path.Combine(tmp.Path, ".claude"));
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            Directory.CreateDirectory(Path.Combine(c, "skills", "alpha"));
+        });
+        var report = new SyncReport(4);
+        var agents = Agents(".claude");
+        SkillLinker.LinkSkills(V(tmp.Path), V(clone), agents.AsView(), ref report);
+
+        var link = new FileInfo(Path.Combine(tmp.Path, ".claude", "skills", "alpha"));
+        Assert.NotNull(link.LinkTarget);
+        Assert.False(Path.IsPathRooted(link.LinkTarget), $"expected relative, got '{link.LinkTarget}'");
+        var resolved = Path.GetFullPath(link.LinkTarget!, Path.GetDirectoryName(link.FullName)!);
+        Assert.Equal(Path.Combine(clone, "skills", "alpha"), resolved);
+
+        report.Dispose();
+        for (int i = 0; i < agents.Length; i++) agents[i].Dispose();
+        agents.Dispose();
+    }
+
+    [Fact]
+    public void ForceBacksUpConcreteFileAndReplacesWithSymlink()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "source");
+        });
+        var concrete = Path.Combine(tmp.Path, "one.txt");
+        File.WriteAllText(concrete, "user-local");
+
+        var report = new SyncReport(4);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report, force: true);
+
+        Assert.True(File.Exists(concrete));
+        Assert.NotNull(new FileInfo(concrete).LinkTarget);
+        var bak = concrete + ".bak";
+        Assert.True(File.Exists(bak));
+        Assert.Equal("user-local", File.ReadAllText(bak));
+        Assert.Equal(0, report.Conflicts.Length);
+        report.Dispose();
+    }
+
+    [Fact]
+    public void NoForceConcreteFileReportsConflict()
+    {
+        using var tmp = new TempDir();
+        var clone = MakeClone(tmp.Path, "owner_repo", c =>
+        {
+            var files = Path.Combine(c, "files");
+            Directory.CreateDirectory(files);
+            File.WriteAllText(Path.Combine(files, "one.txt"), "source");
+        });
+        var concrete = Path.Combine(tmp.Path, "one.txt");
+        File.WriteAllText(concrete, "user-local");
+
+        var report = new SyncReport(4);
+        SkillLinker.LinkFiles(V(tmp.Path), V(clone), ref report);
+
+        Assert.Null(new FileInfo(concrete).LinkTarget);
+        Assert.Equal("user-local", File.ReadAllText(concrete));
+        Assert.False(File.Exists(concrete + ".bak"));
+        Assert.True(report.Conflicts.Length > 0);
+        report.Dispose();
     }
 }

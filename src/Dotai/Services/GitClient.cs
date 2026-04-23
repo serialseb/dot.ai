@@ -105,6 +105,53 @@ public static unsafe class GitClient
     public static GitResult Push(NativeStringView workDir, NativeStringView branch)
         => Run(workDir, "push"u8, "origin"u8, branch);
 
+    public static int RevListCount(NativeStringView workDir, NativeStringView range)
+    {
+        var r = Run(workDir, "rev-list"u8, "--count"u8, range);
+        if (r.ExitCode != 0) { r.Dispose(); return 0; }
+        int n = 0;
+        var s = r.StdOut.AsView().Trim().Bytes;
+        for (int i = 0; i < s.Length; i++)
+        {
+            byte b = s[i];
+            if (b < (byte)'0' || b > (byte)'9') break;
+            n = n * 10 + (b - (byte)'0');
+        }
+        r.Dispose();
+        return n;
+    }
+
+    public struct DiffStat { public int Added; public int Deleted; }
+
+    // Parses `--shortstat` output like " 3 files changed, 120 insertions(+), 40 deletions(-)".
+    public static DiffStat ShortStat(NativeStringView workDir, NativeStringView range)
+    {
+        var r = Run(workDir, "diff"u8, "--shortstat"u8, range);
+        if (r.ExitCode != 0) { r.Dispose(); return default; }
+        var line = r.StdOut.AsView().Trim().Bytes;
+        var stat = new DiffStat();
+        int i = 0;
+        while (i < line.Length)
+        {
+            while (i < line.Length && !IsDigit(line[i])) i++;
+            int n = 0;
+            while (i < line.Length && IsDigit(line[i])) { n = n * 10 + (line[i] - (byte)'0'); i++; }
+            while (i < line.Length && line[i] == (byte)' ') i++;
+            if (i < line.Length)
+            {
+                byte c = line[i];
+                if (c == (byte)'i') stat.Added = n;
+                else if (c == (byte)'d') stat.Deleted = n;
+            }
+            while (i < line.Length && line[i] != (byte)',') i++;
+            if (i < line.Length) i++;
+        }
+        r.Dispose();
+        return stat;
+    }
+
+    private static bool IsDigit(byte b) => b >= (byte)'0' && b <= (byte)'9';
+
     public static NativeString DefaultBranch(NativeStringView workDir)
     {
         var r = Run(workDir, "symbolic-ref"u8, "refs/remotes/origin/HEAD"u8);

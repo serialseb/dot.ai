@@ -13,6 +13,12 @@ public static class ConsoleOut
         Stdio.Write(Stdout, "\n"u8);
     }
 
+    public static void WriteLineStdout(NativeStringView msg)
+    {
+        Stdio.Write(Stdout, msg);
+        Stdio.Write(Stdout, "\n"u8);
+    }
+
     public static void Success(NativeStringView msg)
     {
         if (Stdio.IsTty(Stdout))
@@ -81,5 +87,21 @@ public static class ConsoleOut
     {
         Stdio.Write(Stderr, msg);
         Stdio.Write(Stderr, "\n"u8);
+    }
+
+    public static void Step(NativeStringView msg)
+    {
+        if (Stdio.IsTty(Stdout))
+        {
+            Stdio.Write(Stdout, "\x1b[2m\xe2\x86\x92 "u8);
+            Stdio.Write(Stdout, msg);
+            Stdio.Write(Stdout, "...\x1b[0m\n"u8);
+        }
+        else
+        {
+            Stdio.Write(Stdout, "-> "u8);
+            Stdio.Write(Stdout, msg);
+            Stdio.Write(Stdout, "...\n"u8);
+        }
     }
 }

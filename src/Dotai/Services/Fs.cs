@@ -213,6 +213,23 @@ public static unsafe class Fs
         return true;
     }
 
+    public static bool TryRename(NativeStringView from, NativeStringView to)
+    {
+        byte* fbuf = stackalloc byte[MaxStack];
+        byte* tbuf = stackalloc byte[MaxStack];
+        byte* fp = NullTerm(from, fbuf);
+        byte* tp = NullTerm(to, tbuf);
+        int ret = Libc.Rename(fp, tp);
+        FreeHeap(from, fp, fbuf);
+        FreeHeap(to, tp, tbuf);
+        if (ret != 0)
+        {
+            EmitError("rename failed: "u8, from);
+            return false;
+        }
+        return true;
+    }
+
     // ── path manipulation ────────────────────────────────────────────────────
 
     public static bool TryGetCurrentDirectory(out NativeString cwd)
