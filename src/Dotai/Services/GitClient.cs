@@ -179,12 +179,64 @@ public static unsafe class GitClient
         return result;
     }
 
+    // U+25B8 BLACK RIGHT-POINTING SMALL TRIANGLE, used as segment separator
+    // in clone directory names (avoids conflict with '_' and '/' in owner/repo).
+    public static ReadOnlySpan<byte> NameSeparator => "▸"u8;
+
     /// <summary>
-    /// Derives a filesystem-safe clone directory name from a repo spec.
-    /// Joins all path segments with '_' and replaces any char outside
-    /// [A-Za-z0-9._-] with '_' (covers ':' in host:port and non-ASCII hosts).
+    /// Derives a clone directory name from a repo spec. Form:
+    /// &lt;host&gt;▸&lt;owner&gt;▸&lt;repo&gt;. Host defaults to github.com when
+    /// the spec is two-segment (owner/repo). Any port is stripped from the
+    /// host (the URL retains non-default ports; the directory name never does,
+    /// which avoids the ':' character on disk). Each segment is sanitised by
+    /// replacing bytes outside [A-Za-z0-9._-] with '_'.
     /// </summary>
     public static NativeString DeriveCloneName(NativeStringView spec)
+    {
+        ParseSpec(spec, out var host, out var owner, out var repo);
+        int colon = host.IndexOf((byte)':');
+        if (colon >= 0) host = host[..colon];
+
+        var buf = new NativeBuffer(host.Length + owner.Length + repo.Length + 8);
+        AppendSanitised(ref buf, host);
+        buf.Append(NameSeparator);
+        AppendSanitised(ref buf, owner);
+        buf.Append(NameSeparator);
+        AppendSanitised(ref buf, repo);
+        return buf.Freeze();
+    }
+
+    /// <summary>
+    /// Builds an https clone URL from a repo spec. Two-segment specs
+    /// (owner/repo) resolve to github.com; three-segment specs
+    /// (host[:port]/owner/repo) use the given host verbatim. A default
+    /// https port (443) is stripped because the scheme already implies it.
+    /// </summary>
+    public static NativeString BuildCloneUrl(NativeStringView spec)
+    {
+        ParseSpec(spec, out var host, out var owner, out var repo);
+        int colon = host.IndexOf((byte)':');
+        if (colon >= 0)
+        {
+            var port = host[(colon + 1)..];
+            if (port.SequenceEqual("443"u8)) host = host[..colon];
+        }
+
+        var buf = new NativeBuffer(host.Length + owner.Length + repo.Length + 16);
+        buf.Append("https://"u8);
+        buf.Append(new NativeStringView(host));
+        buf.AppendByte((byte)'/');
+        buf.Append(new NativeStringView(owner));
+        buf.AppendByte((byte)'/');
+        buf.Append(new NativeStringView(repo));
+        return buf.Freeze();
+    }
+
+    /// <summary>
+    /// Reproduces the pre-triangle clone-name scheme ('_'-joined, port retained
+    /// as '_port'). Used once at sync-time to detect and rename legacy clones.
+    /// </summary>
+    public static NativeString DeriveLegacyCloneName(NativeStringView spec)
     {
         var bytes = spec.Bytes;
         while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
@@ -203,19 +255,40 @@ public static unsafe class GitClient
         return buf.Freeze();
     }
 
-    /// <summary>
-    /// Builds an https clone URL from a repo spec. Two-segment specs
-    /// (owner/repo) resolve to github.com; three-segment specs
-    /// (host[:port]/owner/repo) use the given host verbatim.
-    /// </summary>
-    public static NativeString BuildCloneUrl(NativeStringView spec)
+    private static void ParseSpec(NativeStringView spec, out ReadOnlySpan<byte> host,
+        out ReadOnlySpan<byte> owner, out ReadOnlySpan<byte> repo)
     {
-        int firstSlash = spec.Bytes.IndexOf((byte)'/');
-        int lastSlash = spec.Bytes.LastIndexOf((byte)'/');
-        var buf = new NativeBuffer(spec.Length + 24);
-        buf.Append("https://"u8);
-        if (firstSlash == lastSlash) buf.Append("github.com/"u8);
-        buf.Append(spec);
-        return buf.Freeze();
+        var bytes = spec.Bytes;
+        while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
+        if (new NativeStringView(bytes).EndsWith(".git"u8)) bytes = bytes[..^4];
+
+        int first = bytes.IndexOf((byte)'/');
+        int last = bytes.LastIndexOf((byte)'/');
+        if (first == last)
+        {
+            host = "github.com"u8;
+            owner = bytes[..first];
+            repo = bytes[(first + 1)..];
+        }
+        else
+        {
+            host = bytes[..first];
+            owner = bytes[(first + 1)..last];
+            repo = bytes[(last + 1)..];
+        }
+    }
+
+    private static void AppendSanitised(ref NativeBuffer buf, ReadOnlySpan<byte> src)
+    {
+        for (int i = 0; i < src.Length; i++)
+        {
+            byte b = src[i];
+            bool safe =
+                (b >= (byte)'A' && b <= (byte)'Z')
+                || (b >= (byte)'a' && b <= (byte)'z')
+                || (b >= (byte)'0' && b <= (byte)'9')
+                || b == (byte)'.' || b == (byte)'-' || b == (byte)'_';
+            buf.AppendByte(safe ? b : (byte)'_');
+        }
     }
 }

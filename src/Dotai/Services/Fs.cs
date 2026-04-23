@@ -213,6 +213,23 @@ public static unsafe class Fs
         return true;
     }
 
+    // Resolves all symlinks via libc realpath(3). Fails if any path component
+    // does not exist. Buffer is fixed at PATH_MAX (1024) — adequate for macOS.
+    public static bool TryResolveRealpath(NativeStringView path, out NativeString resolved)
+    {
+        byte* buf = stackalloc byte[MaxStack];
+        byte* p = NullTerm(path, buf);
+        const int PathMax = 1024;
+        byte* resBuf = stackalloc byte[PathMax];
+        byte* r = Libc.Realpath(p, resBuf);
+        FreeHeap(path, p, buf);
+        if (r == null) { resolved = default; return false; }
+        int len = 0;
+        while (len < PathMax && resBuf[len] != 0) len++;
+        resolved = NativeString.From(new NativeStringView(new ReadOnlySpan<byte>(resBuf, len)));
+        return true;
+    }
+
     public static bool TryRename(NativeStringView from, NativeStringView to)
     {
         byte* fbuf = stackalloc byte[MaxStack];

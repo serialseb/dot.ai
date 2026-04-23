@@ -177,13 +177,27 @@ public sealed class SyncCommand
         int slash = nameView.Bytes.LastIndexOf((byte)'/');
         if (slash >= 0) shortName = new NativeStringView(nameView.Bytes[(slash + 1)..]);
 
-        // Clone dir: .ai/repositories/<owner>_<repo>
+        // Clone dir: .ai/repositories/<host>▸<owner>▸<repo>
         var cloneName = GitClient.DeriveCloneName(nameView);
+        var legacyName = GitClient.DeriveLegacyCloneName(nameView);
         var aiDir = Fs.Combine(repoRoot, ".ai"u8);
         var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
         aiDir.Dispose();
         var clone = Fs.Combine(reposDir.AsView(), cloneName.AsView());
-        cloneName.Dispose(); reposDir.Dispose();
+
+        // One-shot rename of a pre-existing '_'-joined legacy clone dir so
+        // setups created before the triangle-separator scheme keep working
+        // without forcing a re-clone.
+        if (!cloneName.AsView().Bytes.SequenceEqual(legacyName.AsView().Bytes))
+        {
+            var legacyClone = Fs.Combine(reposDir.AsView(), legacyName.AsView());
+            var legacyDotGit = Fs.Combine(legacyClone.AsView(), ".git"u8);
+            if (!Fs.IsDirectory(clone.AsView()) && Fs.IsDirectory(legacyDotGit.AsView()))
+                Fs.TryRename(legacyClone.AsView(), clone.AsView());
+            legacyDotGit.Dispose();
+            legacyClone.Dispose();
+        }
+        cloneName.Dispose(); legacyName.Dispose(); reposDir.Dispose();
 
         if (!silent) EmitRepoHeader(shortName, urlNs.AsView());
 

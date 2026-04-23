@@ -100,8 +100,7 @@ public class SyncCommandTests
             File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
         });
         var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
-        // Clone key is owner_repo
-        var cloneKey = "owner_repo";
+        var cloneKey = "github.com▸owner▸repo";
         var skillFile = Path.Combine(project, ".ai", "repositories", cloneKey, "skills", "alpha", "SKILL.md");
         File.WriteAllText(skillFile, "edited");
         var cmd = new SyncCommand(V(project));
@@ -124,7 +123,7 @@ public class SyncCommandTests
         var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
             File.WriteAllText(Path.Combine(w, "readme.md"), "x"));
         var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
-        var cloneKey = "owner_repo";
+        var cloneKey = "github.com▸owner▸repo";
         Directory.CreateDirectory(Path.Combine(project, ".ai", "repositories", cloneKey, ".git", "rebase-merge"));
         var cmd = new SyncCommand(V(project));
         var emptyArgs = EmptyArgs();
@@ -133,6 +132,32 @@ public class SyncCommandTests
         emptyArgs.Dispose();
 
         Assert.Equal(3, code);
+    }
+
+    [Fact]
+    public void RenamesLegacyUnderscoreCloneDirOnSync()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+        {
+            Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
+            File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
+        });
+        // Use the override to set up a clone under the legacy '_'-joined name.
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo", cloneNameOverride: "owner_repo");
+        var legacy = Path.Combine(project, ".ai", "repositories", "owner_repo");
+        var modern = Path.Combine(project, ".ai", "repositories", "github.com▸owner▸repo");
+        Assert.True(Directory.Exists(legacy));
+        Assert.False(Directory.Exists(modern));
+
+        var cmd = new SyncCommand(V(project));
+        var emptyArgs = EmptyArgs();
+        var code = cmd.Execute(emptyArgs.AsView());
+        emptyArgs.Dispose();
+
+        Assert.Equal(0, code);
+        Assert.False(Directory.Exists(legacy));
+        Assert.True(Directory.Exists(modern));
     }
 
     [Fact]

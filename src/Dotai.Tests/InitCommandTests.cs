@@ -77,8 +77,8 @@ public class InitCommandTests
         Assert.Equal(0, code);
         Assert.True(File.Exists(Path.Combine(repo, ".ai", "config.toml")));
         Assert.True(File.Exists(Path.Combine(repo, ".ai", ".gitignore")));
-        // Clone name is derived from owner/repo → owner_repo
-        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "owner_repo", ".git")));
+        // Clone name is derived from owner/repo → github.com▸owner▸repo
+        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "github.com▸owner▸repo", ".git")));
         var link = Path.Combine(repo, ".claude", "skills", "alpha");
         Assert.True(Directory.Exists(link));
         Assert.NotNull(new FileInfo(link).LinkTarget);
@@ -103,7 +103,7 @@ public class InitCommandTests
         args.Dispose();
 
         Assert.Equal(0, code);
-        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "gitlab.com_owner_repo", ".git")));
+        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "gitlab.com▸owner▸repo", ".git")));
     }
 
     [Fact]
