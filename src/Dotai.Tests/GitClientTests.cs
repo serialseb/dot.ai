@@ -86,4 +86,52 @@ public class GitClientTests
 
         Assert.True(GitClient.RebaseInProgress(V(work)));
     }
+
+    [Fact]
+    public void BuildCloneUrlDefaultsToGithubForTwoSegmentSpec()
+    {
+        var url = GitClient.BuildCloneUrl(V("owner/repo"));
+        Assert.True(url.AsView() == "https://github.com/owner/repo"u8);
+        url.Dispose();
+    }
+
+    [Fact]
+    public void BuildCloneUrlUsesHostForThreeSegmentSpec()
+    {
+        var url = GitClient.BuildCloneUrl(V("gitlab.com/owner/repo"));
+        Assert.True(url.AsView() == "https://gitlab.com/owner/repo"u8);
+        url.Dispose();
+    }
+
+    [Fact]
+    public void BuildCloneUrlPreservesPort()
+    {
+        var url = GitClient.BuildCloneUrl(V("git.local:8443/owner/repo"));
+        Assert.True(url.AsView() == "https://git.local:8443/owner/repo"u8);
+        url.Dispose();
+    }
+
+    [Fact]
+    public void DeriveCloneNameKeepsHostSegment()
+    {
+        var name = GitClient.DeriveCloneName(V("gitlab.com/owner/repo"));
+        Assert.True(name.AsView() == "gitlab.com_owner_repo"u8);
+        name.Dispose();
+    }
+
+    [Fact]
+    public void DeriveCloneNameSanitizesColonInPort()
+    {
+        var name = GitClient.DeriveCloneName(V("git.local:8443/owner/repo"));
+        Assert.True(name.AsView() == "git.local_8443_owner_repo"u8);
+        name.Dispose();
+    }
+
+    [Fact]
+    public void DeriveCloneNameKeepsLegacyOwnerRepoUnchanged()
+    {
+        var name = GitClient.DeriveCloneName(V("owner/repo"));
+        Assert.True(name.AsView() == "owner_repo"u8);
+        name.Dispose();
+    }
 }

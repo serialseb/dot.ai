@@ -42,12 +42,12 @@ public sealed class InitCommand
         }
 
         var arg = positional[0].AsView();
-        if (!IsValidOwnerRepo(arg))
+        if (!IsValidRepoSpec(arg))
         {
-            var buf = new NativeBuffer(64);
+            var buf = new NativeBuffer(96);
             buf.Append("invalid argument: '"u8);
             buf.Append(arg);
-            buf.Append("' (expected <owner>/<repo>)"u8);
+            buf.Append("' (expected <owner>/<repo> or <host>/<owner>/<repo>)"u8);
             ConsoleOut.Error(buf.AsView());
             buf.Dispose();
             parsed.Dispose();
@@ -67,19 +67,12 @@ public sealed class InitCommand
             ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
         skillshareCheck.Dispose();
 
-        // Build clone URL: https://github.com/<owner>/<repo>
+        // Build clone URL from repo spec (owner/repo or host[:port]/owner/repo).
         NativeString urlNs;
         if (!CloneUrlOverride.IsEmpty)
-        {
             urlNs = NativeString.From(CloneUrlOverride.AsView());
-        }
         else
-        {
-            var urlBuf = new NativeBuffer(32 + arg.Length);
-            urlBuf.Append("https://github.com/"u8);
-            urlBuf.Append(arg);
-            urlNs = urlBuf.Freeze();
-        }
+            urlNs = GitClient.BuildCloneUrl(arg);
 
         // Derive clone dir name from owner/repo (replaces '/' with '_')
         var cloneName = GitClient.DeriveCloneName(arg);
@@ -180,28 +173,43 @@ public sealed class InitCommand
     }
 
     private static ReadOnlySpan<byte> Help_u8 =>
-        "dotai init [standard flags] <owner>/<repo> — register a source repository and sync."u8;
+        "dotai init [standard flags] <owner>/<repo> | <host>[:port]/<owner>/<repo> — register a source repository and sync."u8;
 
-    private static bool IsValidOwnerRepo(NativeStringView data)
+    // Accepts:
+    //   owner/repo                      (GitHub shortcut)
+    //   host/owner/repo                 (any host, verbatim)
+    //   host:port/owner/repo            (host with port)
+    // Host segment is not validated for character content — IDN and
+    // multilingual hosts are allowed. Owner and repo segments keep the
+    // existing restrictive char class.
+    private static bool IsValidRepoSpec(NativeStringView data)
     {
         if (data.Length == 0) return false;
-        int slashCount = 0;
-        int segmentLength = 0;
-        for (int i = 0; i < data.Length; i++)
-        {
-            var b = data[i];
-            if (b == (byte)'/')
-            {
-                if (segmentLength == 0) return false;
-                if (slashCount == 1) return false;
-                slashCount++;
-                segmentLength = 0;
-                continue;
-            }
-            if (!IsAllowedByte(b)) return false;
-            segmentLength++;
-        }
-        return slashCount == 1 && segmentLength > 0;
+
+        int firstSlash = data.Bytes.IndexOf((byte)'/');
+        int lastSlash = data.Bytes.LastIndexOf((byte)'/');
+        if (firstSlash <= 0 || firstSlash == data.Length - 1) return false;
+
+        if (firstSlash == lastSlash)
+            return IsValidPathSegment(data.Bytes[..firstSlash])
+                && IsValidPathSegment(data.Bytes[(firstSlash + 1)..]);
+
+        int midStart = firstSlash + 1;
+        int midEnd = lastSlash;
+        if (midEnd <= midStart) return false;
+        var mid = data.Bytes[midStart..midEnd];
+        if (mid.IndexOf((byte)'/') >= 0) return false;
+
+        return IsValidPathSegment(mid)
+            && IsValidPathSegment(data.Bytes[(lastSlash + 1)..]);
+    }
+
+    private static bool IsValidPathSegment(ReadOnlySpan<byte> seg)
+    {
+        if (seg.IsEmpty) return false;
+        for (int i = 0; i < seg.Length; i++)
+            if (!IsAllowedByte(seg[i])) return false;
+        return true;
     }
 
     private static bool IsAllowedByte(byte b) =>

@@ -169,11 +169,8 @@ public sealed class SyncCommand
     {
         var nameView = entry.Name.AsView();
 
-        // Build URL: https://github.com/<name>
-        var urlBuf = new NativeBuffer(32 + nameView.Length);
-        urlBuf.Append("https://github.com/"u8);
-        urlBuf.Append(nameView);
-        var urlNs = urlBuf.Freeze();
+        // Build URL from spec (owner/repo or host[:port]/owner/repo).
+        var urlNs = GitClient.BuildCloneUrl(nameView);
 
         // Short name = last path segment of nameView
         var shortName = nameView;

@@ -85,6 +85,43 @@ public class InitCommandTests
     }
 
     [Fact]
+    public void AcceptsHostFormAndCreatesHostPrefixedCloneDir()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+        {
+            var skill = Path.Combine(w, "skills", "alpha");
+            Directory.CreateDirectory(skill);
+            File.WriteAllText(Path.Combine(skill, "SKILL.md"), "hi");
+        });
+        var repo = MakeGitRepoWithAgent(tmp.Path);
+        var cmd = new InitCommand(V(repo)) { CloneUrlOverride = NativeString.From(V(remoteUrl)) };
+        var args = Args("gitlab.com/owner/repo");
+
+        var code = cmd.Execute(args.AsView());
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
+
+        Assert.Equal(0, code);
+        Assert.True(Directory.Exists(Path.Combine(repo, ".ai", "repositories", "gitlab.com_owner_repo", ".git")));
+    }
+
+    [Fact]
+    public void RejectsFourSegmentSpec()
+    {
+        using var tmp = new TempDir();
+        var repo = MakeGitRepoWithAgent(tmp.Path);
+        var cmd = new InitCommand(V(repo));
+        var args = Args("a/b/c/d");
+
+        var code = cmd.Execute(args.AsView());
+        for (int i = 0; i < args.Length; i++) args[i].Dispose();
+        args.Dispose();
+
+        Assert.Equal(1, code);
+    }
+
+    [Fact]
     public void RespectsDashProjectFlag()
     {
         using var tmp = new TempDir();

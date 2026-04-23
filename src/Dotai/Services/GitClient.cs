@@ -180,29 +180,42 @@ public static unsafe class GitClient
     }
 
     /// <summary>
-    /// Derives a filesystem-safe clone directory name from a remote URL.
+    /// Derives a filesystem-safe clone directory name from a repo spec.
+    /// Joins all path segments with '_' and replaces any char outside
+    /// [A-Za-z0-9._-] with '_' (covers ':' in host:port and non-ASCII hosts).
     /// </summary>
-    public static NativeString DeriveCloneName(NativeStringView url)
+    public static NativeString DeriveCloneName(NativeStringView spec)
     {
-        var bytes = url.Bytes;
+        var bytes = spec.Bytes;
         while (!bytes.IsEmpty && bytes[^1] == (byte)'/') bytes = bytes[..^1];
         if (new NativeStringView(bytes).EndsWith(".git"u8)) bytes = bytes[..^4];
-        int last = bytes.LastIndexOf((byte)'/');
-        if (last < 0)
+        var buf = new NativeBuffer(bytes.Length);
+        for (int i = 0; i < bytes.Length; i++)
         {
-            // Replace all '/' with '_'
-            var buf = new NativeBuffer(bytes.Length);
-            for (int i = 0; i < bytes.Length; i++)
-                buf.AppendByte(bytes[i] == (byte)'/' ? (byte)'_' : bytes[i]);
-            return buf.Freeze();
+            byte b = bytes[i];
+            bool safe =
+                (b >= (byte)'A' && b <= (byte)'Z')
+                || (b >= (byte)'a' && b <= (byte)'z')
+                || (b >= (byte)'0' && b <= (byte)'9')
+                || b == (byte)'.' || b == (byte)'-' || b == (byte)'_';
+            buf.AppendByte(safe ? b : (byte)'_');
         }
-        int secondLast = bytes[..last].LastIndexOf((byte)'/');
-        ReadOnlySpan<byte> seg1 = secondLast >= 0 ? bytes[(secondLast + 1)..last] : bytes[..last];
-        ReadOnlySpan<byte> seg2 = bytes[(last + 1)..];
-        var res = new NativeBuffer(seg1.Length + 1 + seg2.Length);
-        res.Append(new NativeStringView(seg1));
-        res.AppendByte((byte)'_');
-        res.Append(new NativeStringView(seg2));
-        return res.Freeze();
+        return buf.Freeze();
+    }
+
+    /// <summary>
+    /// Builds an https clone URL from a repo spec. Two-segment specs
+    /// (owner/repo) resolve to github.com; three-segment specs
+    /// (host[:port]/owner/repo) use the given host verbatim.
+    /// </summary>
+    public static NativeString BuildCloneUrl(NativeStringView spec)
+    {
+        int firstSlash = spec.Bytes.IndexOf((byte)'/');
+        int lastSlash = spec.Bytes.LastIndexOf((byte)'/');
+        var buf = new NativeBuffer(spec.Length + 24);
+        buf.Append("https://"u8);
+        if (firstSlash == lastSlash) buf.Append("github.com/"u8);
+        buf.Append(spec);
+        return buf.Freeze();
     }
 }
