@@ -96,6 +96,12 @@ public sealed class SyncCommand
             ConsoleOut.Warn("--force: reset dotai-owned symlinks and config. previous dotai state lost."u8);
         }
 
+        // Config.toml is the source of truth: drop any clone directory under
+        // .ai/repositories/ whose name does not appear in the active config,
+        // unless it was produced by a Skillshare migration (those stay put
+        // so dotai init --uninstall can rehydrate them).
+        ReconcileRepositories(repoRoot.AsView(), config.AsView());
+
         report = new SyncReport(4);
 
         if (!silent)
@@ -205,14 +211,29 @@ public sealed class SyncCommand
         if (!Fs.IsDirectory(cloneDotGit.AsView()))
         {
             cloneDotGit.Dispose();
-            var msg = new NativeBuffer(clone.Length + 16);
-            msg.Append(clone.AsView());
-            msg.Append(" (not cloned)"u8);
-            report.ManualRepos.Add(msg.Freeze());
-            clone.Dispose(); urlNs.Dispose();
-            return;
+            if (!silent) ConsoleOut.WriteLineStdout("📥 Cloning…"u8);
+            var cloneResult = GitClient.Clone(urlNs.AsView(), clone.AsView());
+            int cloneCode = cloneResult.ExitCode;
+            var stderr = NativeString.From(cloneResult.StdErr.AsView().Trim());
+            cloneResult.Dispose();
+            if (cloneCode != 0)
+            {
+                var msg = new NativeBuffer(clone.Length + 32 + stderr.Length);
+                msg.Append(clone.AsView());
+                msg.Append(" (clone failed: "u8);
+                msg.Append(stderr.AsView());
+                msg.AppendByte((byte)')');
+                report.ManualRepos.Add(msg.Freeze());
+                stderr.Dispose();
+                clone.Dispose(); urlNs.Dispose();
+                return;
+            }
+            stderr.Dispose();
         }
-        cloneDotGit.Dispose();
+        else
+        {
+            cloneDotGit.Dispose();
+        }
 
         if (GitClient.RebaseInProgress(clone.AsView()))
         {
@@ -326,14 +347,99 @@ public sealed class SyncCommand
         }
         push.Dispose();
 
+        int skillsBefore = report.SkillsNew + report.SkillsUpdated + report.SkillsUnchanged;
+        int filesBefore = report.FilesNew + report.FilesUpdated + report.FilesUnchanged;
         SkillLinker.LinkSkills(repoRoot, clone.AsView(), agents, ref report, force);
         SkillLinker.LinkFiles(repoRoot, clone.AsView(), ref report, force);
         SkillLinker.CleanupOrphans(repoRoot, agents, ref report);
+        int contributed =
+            (report.SkillsNew + report.SkillsUpdated + report.SkillsUnchanged - skillsBefore) +
+            (report.FilesNew + report.FilesUpdated + report.FilesUnchanged - filesBefore);
 
-        if (!silent) ConsoleOut.WriteLineStdout("☑️  Sync complete"u8);
+        if (!silent)
+        {
+            if (contributed == 0) EmitEmptyRepoHint(repoRoot, nameView);
+            ConsoleOut.WriteLineStdout("☑️  Sync complete"u8);
+        }
 
         clone.Dispose();
         urlNs.Dispose();
+    }
+
+    private static void ReconcileRepositories(NativeStringView repoRoot, NativeListView<RepoConfig> config)
+    {
+        var aiDir = Fs.Combine(repoRoot, ".ai"u8);
+        var reposDir = Fs.Combine(aiDir.AsView(), "repositories"u8);
+        aiDir.Dispose();
+        if (!Fs.IsDirectory(reposDir.AsView())) { reposDir.Dispose(); return; }
+
+        // Active = names derived from config (new + legacy shape).
+        var active = new NativeList<NativeString>(config.Length * 2);
+        for (int i = 0; i < config.Length; i++)
+        {
+            active.Add(GitClient.DeriveCloneName(config[i].Name.AsView()));
+            active.Add(GitClient.DeriveLegacyCloneName(config[i].Name.AsView()));
+        }
+        var protectedNames = SkillshareMigrator.LoadProtectedCloneNames(repoRoot);
+
+        var entries = Fs.EnumerateDirectories(reposDir.AsView());
+        for (int i = 0; i < entries.Length; i++)
+        {
+            var name = Fs.GetFileName(entries[i].AsView());
+            bool keep = ContainsView(active.AsView(), name.AsView())
+                || ContainsView(protectedNames.AsView(), name.AsView());
+            if (!keep)
+            {
+                Fs.TryDeleteDirectoryRecursive(entries[i].AsView());
+                var buf = new NativeBuffer(name.Length + 32);
+                buf.Append("🗑️  Removed stale repository "u8);
+                buf.Append(name.AsView());
+                ConsoleOut.WriteLineStdout(buf.AsView());
+                buf.Dispose();
+            }
+            name.Dispose();
+        }
+        for (int i = 0; i < entries.Length; i++) entries[i].Dispose();
+        entries.Dispose();
+
+        for (int i = 0; i < active.Length; i++) active[i].Dispose();
+        active.Dispose();
+        for (int i = 0; i < protectedNames.Length; i++) protectedNames[i].Dispose();
+        protectedNames.Dispose();
+        reposDir.Dispose();
+    }
+
+    private static bool ContainsView(NativeListView<NativeString> list, NativeStringView needle)
+    {
+        for (int i = 0; i < list.Length; i++)
+            if (list[i].AsView().Bytes.SequenceEqual(needle.Bytes)) return true;
+        return false;
+    }
+
+    private static void EmitEmptyRepoHint(NativeStringView repoRoot, NativeStringView spec)
+    {
+        var buf = new NativeBuffer(128 + spec.Length);
+        buf.Append("⚠️  '"u8);
+        buf.Append(spec);
+        buf.Append("' provides no skills or files. Remove it from "u8);
+        bool tty = Stdio.IsTty(1);
+        var cfgAbs = Fs.Combine(repoRoot, ".ai/config.toml"u8);
+        if (tty)
+        {
+            buf.Append("\x1b]8;;file://"u8);
+            buf.Append(cfgAbs.AsView());
+            buf.Append("\x1b\\"u8);
+            buf.Append(".ai/config.toml"u8);
+            buf.Append("\x1b]8;;\x1b\\"u8);
+        }
+        else
+        {
+            buf.Append(".ai/config.toml"u8);
+        }
+        buf.Append(" if it is no longer needed."u8);
+        cfgAbs.Dispose();
+        ConsoleOut.WriteLineStdout(buf.AsView());
+        buf.Dispose();
     }
 
     private static void EmitRepoHeader(NativeStringView shortName, NativeStringView url)

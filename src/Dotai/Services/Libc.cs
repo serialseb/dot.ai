@@ -90,6 +90,9 @@ internal static unsafe partial class Libc
     [LibraryImport("libc", EntryPoint = "realpath")]
     internal static partial byte* Realpath(byte* path, byte* resolved);
 
+    [LibraryImport("libc", EntryPoint = "rmdir")]
+    internal static partial int Rmdir(byte* path);
+
     [LibraryImport("libc", EntryPoint = "opendir")]
     internal static partial IntPtr Opendir(byte* path);
 

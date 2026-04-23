@@ -216,4 +216,61 @@ public class SyncCommandTests
         // after reset, config is empty → sync exits 1 "no repositories configured"
         Assert.Equal(1, code);
     }
+
+    [Fact]
+    public void DeletesUnreferencedCloneDirOnSync()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+        {
+            Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
+            File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
+        });
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
+
+        // Simulate a previously-tracked repo whose entry has since been
+        // removed from config.toml: the clone directory is still there but
+        // no longer appears in config.
+        var stale = Path.Combine(project, ".ai", "repositories", "example.com▸ghost▸gone");
+        Directory.CreateDirectory(Path.Combine(stale, ".git"));
+
+        var cmd = new SyncCommand(V(project));
+        var args = EmptyArgs();
+        var code = cmd.Execute(args.AsView());
+        args.Dispose();
+
+        Assert.Equal(0, code);
+        Assert.False(Directory.Exists(stale));
+    }
+
+    [Fact]
+    public void PreservesMigratedCloneEvenWithoutConfigEntry()
+    {
+        using var tmp = new TempDir();
+        var (remoteUrl, _) = LocalGitRepo.CreateRemoteWithContent(tmp.Path, w =>
+        {
+            Directory.CreateDirectory(Path.Combine(w, "skills", "alpha"));
+            File.WriteAllText(Path.Combine(w, "skills", "alpha", "SKILL.md"), "x");
+        });
+        var project = MakeProject(tmp.Path, remoteUrl, "owner/repo");
+
+        // A clone from a past Skillshare migration. Even though config.toml
+        // does not list it, skillshare.toml records it as protected.
+        var migratedName = "github.com▸foo▸bar";
+        var migratedDir = Path.Combine(project, ".ai", "repositories", migratedName);
+        Directory.CreateDirectory(Path.Combine(migratedDir, ".git"));
+
+        var migrationDir = Path.Combine(project, ".ai", "migration");
+        Directory.CreateDirectory(migrationDir);
+        File.WriteAllText(Path.Combine(migrationDir, "skillshare.toml"),
+            $"[[repository]]\nnew_name = \"{migratedName}\"\nformer_path = \".skillshare/skills/_foo_bar\"\n");
+
+        var cmd = new SyncCommand(V(project));
+        var args = EmptyArgs();
+        var code = cmd.Execute(args.AsView());
+        args.Dispose();
+
+        Assert.Equal(0, code);
+        Assert.True(Directory.Exists(migratedDir));
+    }
 }
