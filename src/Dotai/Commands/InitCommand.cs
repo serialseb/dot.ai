@@ -62,10 +62,22 @@ public sealed class InitCommand
             return 1;
         }
 
-        var skillshareCheck = Fs.Combine(repoRoot.AsView(), ".skillshare"u8);
-        if (Fs.IsDirectory(skillshareCheck.AsView()))
-            ConsoleOut.Warn(".skillshare present. Please uninstall or reconfigure."u8);
-        skillshareCheck.Dispose();
+        if (SkillshareMigrator.IsProjectMode(repoRoot.AsView()))
+        {
+            if (!PromptForSkillshareMigration())
+            {
+                repoRoot.Dispose();
+                parsed.Dispose();
+                return 1;
+            }
+            if (!SkillshareMigrator.TryMigrate(repoRoot.AsView(), out var stats))
+            {
+                repoRoot.Dispose();
+                parsed.Dispose();
+                return 2;
+            }
+            EmitMigrationSummary(stats);
+        }
 
         // Build clone URL from repo spec (owner/repo or host[:port]/owner/repo).
         NativeString urlNs;
@@ -170,6 +182,29 @@ public sealed class InitCommand
         repoRoot.Dispose();
         parsed.Dispose();
         return syncCode;
+    }
+
+    private static bool PromptForSkillshareMigration()
+    {
+        ConsoleOut.Info("Skillshare is incompatible with dotai."u8);
+        ConsoleOut.Info("If you wish, you can try dotai and migrate your existing configurtion."u8);
+        ConsoleOut.Info("If you want to go back at any point, just use `dotai init --uninstall`"u8);
+        ConsoleOut.Info("and your skillshare configuraiton will be restored."u8);
+        ConsoleOut.WriteLineStdout(""u8);
+        ConsoleOut.WriteLineStdout("Install dotai? (y/n): "u8);
+        return ConsoleIn.ReadYesNo();
+    }
+
+    private static void EmitMigrationSummary(MigrationStats stats)
+    {
+        var buf = new NativeBuffer(80);
+        buf.Append("migrated "u8);
+        buf.AppendInt(stats.Skills);
+        buf.Append(" skills, "u8);
+        buf.AppendInt(stats.Files);
+        buf.Append(" files from Skillshare"u8);
+        ConsoleOut.Success(buf.AsView());
+        buf.Dispose();
     }
 
     private static ReadOnlySpan<byte> Help_u8 =>
