@@ -26,7 +26,7 @@ public static unsafe class Program
 
     private static int Dispatch(NativeListView<NativeString> args)
     {
-        if (args.Length == 0) return HelpCommand.Execute(args);
+        if (args.Length == 0) return new StatusCommand().Execute(args);
         var first = args[0].AsView();
         var rest = args.Slice(1);
         if (first == "--help"u8 || first == "-h"u8) return HelpCommand.Execute(rest);
